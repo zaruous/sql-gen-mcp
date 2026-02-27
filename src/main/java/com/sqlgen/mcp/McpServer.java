@@ -25,14 +25,25 @@ public class McpServer {
     private final Map<String, SseClient> sessions = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
-        String port = System.getProperty("server.port", "7070");
-        new McpServer().launch(port);
+        new McpServer().launch();
     }
 
-    public void launch(String serverPort) {
-        int port = Integer.parseInt(serverPort);
+    public void launch() {
+        com.fasterxml.jackson.databind.ObjectMapper yamlMapper = new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
+        int port = 7070; // 기본값
+
+        try (var is = McpServer.class.getClassLoader().getResourceAsStream("application.yml")) {
+            if (is != null) {
+                com.fasterxml.jackson.databind.JsonNode root = yamlMapper.readTree(is);
+                port = root.path("server").path("port").asInt(7070);
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to read port from application.yml, using default 7070");
+        }
+
+        final int finalPort = port;
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(McpServer.class);
-        McpHandler mcpHandler = context.getBean(McpHandler.class);
+        com.sqlgen.mcp.controller.McpController mcpController = context.getBean(com.sqlgen.mcp.controller.McpController.class);
 
         Javalin app = Javalin.create(config -> {
             config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()));
@@ -49,27 +60,12 @@ public class McpServer {
                 });
             }));
             config.registerPlugin(new SwaggerPlugin(swaggerConfig -> {}));
-        }).start(port);
+        }).start(finalPort);
 
-        app.get("/", ctx -> ctx.result("SQL MCP Server is running. Visit /swagger for API docs."));
+        app.get("/", mcpController::getIndex);
+        app.sse("/sse", mcpController::connectSse);
+        app.post("/messages", mcpController::handleMessages);
 
-        app.sse("/sse", sseClient -> {
-            String sessionId = UUID.randomUUID().toString();
-            sessions.put(sessionId, sseClient);
-            String endpointUrl = "http://localhost:" + port + "/messages?sessionId=" + sessionId;
-            sseClient.sendEvent("endpoint", endpointUrl);
-            logger.info("New MCP Client Connected: {}", sessionId);
-            sseClient.onClose(() -> sessions.remove(sessionId));
-        });
-
-        app.post("/messages", ctx -> {
-            String sessionId = ctx.queryParam("sessionId");
-            String body = ctx.body();
-            SseClient sse = sessions.get(sessionId);
-            if (sse != null) mcpHandler.handle(sse, body);
-            ctx.status(200).result("OK");
-        });
-
-        logger.info("SQL MCP Server started on port {}. Swagger: http://localhost:{}/swagger", port, port);
+        logger.info("SQL MCP Server started on port {}. Swagger: http://localhost:{}/swagger", finalPort, finalPort);
     }
 }

@@ -52,4 +52,22 @@ public class DatabaseConfig {
     public JdbcTemplate jdbcTemplate(DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
+
+    @Bean
+    public com.sqlgen.mcp.service.SchemaService schemaService(DataSource dataSource) {
+        com.sqlgen.mcp.service.SchemaService service = new com.sqlgen.mcp.service.SchemaService(dataSource);
+        ObjectMapper yamlMapper = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
+        try (var is = DatabaseConfig.class.getClassLoader().getResourceAsStream("application.yml")) {
+            if (is != null) {
+                JsonNode root = yamlMapper.readTree(is);
+                String outputDir = root.path("db").path("schema-output-dir").asText();
+                if (outputDir != null && !outputDir.isEmpty()) {
+                    service.setDefaultOutputDir(outputDir);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not set default output dir from application.yml");
+        }
+        return service;
+    }
 }

@@ -21,9 +21,14 @@ import java.util.Map;
 public class SchemaService {
     private static final Logger logger = LoggerFactory.getLogger(SchemaService.class);
     private final DataSource dataSource;
+    private String defaultOutputDir = "src/main/resources/docs/schema";
 
     public SchemaService(DataSource dataSource) {
         this.dataSource = dataSource;
+    }
+
+    public void setDefaultOutputDir(String defaultOutputDir) {
+        this.defaultOutputDir = defaultOutputDir;
     }
 
     public static class TableInfo {
@@ -45,6 +50,7 @@ public class SchemaService {
     }
 
     public void extractAndSave(String outputDir) {
+        String finalDir = (outputDir == null || outputDir.isEmpty()) ? defaultOutputDir : outputDir;
         try (Connection conn = dataSource.getConnection()) {
             String dbType = getDbType(conn);
             List<TableInfo> tables = new ArrayList<>();
@@ -72,7 +78,7 @@ public class SchemaService {
                 }
                 tables.add(tableInfo);
             }
-            save(tables, outputDir);
+            save(tables, finalDir);
         } catch (SQLException e) {
             logger.error("Extraction failed", e);
         }
@@ -121,16 +127,28 @@ public class SchemaService {
         return tableName.contains("_") ? tableName.split("_")[0].toUpperCase() : "COMMON";
     }
 
+    private String loadSql(String path) {
+        try (var is = getClass().getClassLoader().getResourceAsStream("sql/schema/" + path)) {
+            if (is == null) return "";
+            return new String(is.readAllBytes());
+        } catch (IOException e) {
+            logger.error("Failed to load SQL file: {}", path, e);
+            return "";
+        }
+    }
+
     private List<Map<String, String>> fetchTables(Connection conn, String dbType) throws SQLException {
-        String sql = switch (dbType) {
-            case "ORACLE" -> "SELECT TABLE_NAME, COMMENTS as REMARK FROM USER_TAB_COMMENTS WHERE TABLE_TYPE = 'TABLE'";
-            case "POSTGRES" -> "SELECT relname as TABLE_NAME, obj_description(oid) as REMARK FROM pg_class WHERE relkind = 'r' AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')";
-            case "MSSQL" -> "SELECT t.name AS TABLE_NAME, CAST(p.value AS VARCHAR) AS REMARK FROM sys.tables t LEFT JOIN sys.extended_properties p ON t.object_id = p.major_id AND p.minor_id = 0 AND p.name = 'MS_Description'";
+        String fileName = switch (dbType) {
+            case "ORACLE" -> "oracle_tables.sql";
+            case "POSTGRES" -> "postgres_tables.sql";
+            case "MSSQL" -> "mssql_tables.sql";
             default -> "";
         };
 
+        if (fileName.isEmpty()) return new ArrayList<>();
+        String sql = loadSql(fileName);
+
         List<Map<String, String>> list = new ArrayList<>();
-        if (sql.isEmpty()) return list;
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 Map<String, String> map = new HashMap<>();
@@ -143,26 +161,31 @@ public class SchemaService {
     }
 
     private List<Map<String, String>> fetchColumns(Connection conn, String dbType, String tableName) throws SQLException {
-        String sql = switch (dbType) {
-            case "POSTGRES" -> "SELECT ordinal_position as POS, column_name as NAME, data_type as TYPE, character_maximum_length as LEN, 'N' as PK, is_nullable as NULLABLE, '' as REMARK FROM information_schema.columns WHERE table_name = '" + tableName + "' AND table_schema = 'public' ORDER BY ordinal_position";
-            case "ORACLE" -> "SELECT ATC.COLUMN_ID as POS, ATC.COLUMN_NAME as NAME, ATC.DATA_TYPE as TYPE, ATC.DATA_LENGTH as LEN, (SELECT 'Y' FROM USER_CONS_COLUMNS UCC, USER_CONSTRAINTS UC WHERE UCC.CONSTRAINT_NAME = UC.CONSTRAINT_NAME AND UC.CONSTRAINT_TYPE = 'P' AND UCC.TABLE_NAME = ATC.TABLE_NAME AND UCC.COLUMN_NAME = ATC.COLUMN_NAME) as PK, ATC.NULLABLE, ACC.COMMENTS as REMARK FROM USER_TAB_COLUMNS ATC, USER_COL_COMMENTS ACC WHERE ATC.TABLE_NAME = ACC.TABLE_NAME AND ATC.COLUMN_NAME = ACC.COLUMN_NAME AND ATC.TABLE_NAME = '" + tableName + "' ORDER BY ATC.COLUMN_ID";
-            case "MSSQL" -> "SELECT c.column_id as POS, c.name as NAME, TYPE_NAME(c.user_type_id) as TYPE, c.max_length as LEN, ISNULL((SELECT 'Y' FROM sys.index_columns ic JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id WHERE i.is_primary_key = 1 AND ic.object_id = c.object_id AND ic.column_id = c.column_id), 'N') as PK, (CASE WHEN c.is_nullable = 1 THEN 'Y' ELSE 'N' END) as NULLABLE, CAST(p.value AS VARCHAR) as REMARK FROM sys.columns c LEFT JOIN sys.extended_properties p ON c.object_id = p.major_id AND c.column_id = p.minor_id AND p.name = 'MS_Description' WHERE c.object_id = OBJECT_ID('" + tableName + "') ORDER BY c.column_id";
+        String fileName = switch (dbType) {
+            case "POSTGRES" -> "postgres_columns.sql";
+            case "ORACLE" -> "oracle_columns.sql";
+            case "MSSQL" -> "mssql_columns.sql";
             default -> "";
         };
 
+        if (fileName.isEmpty()) return new ArrayList<>();
+        String sql = loadSql(fileName);
+
         List<Map<String, String>> list = new ArrayList<>();
-        if (sql.isEmpty()) return list;
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                Map<String, String> map = new HashMap<>();
-                map.put("POS", rs.getString("POS"));
-                map.put("NAME", rs.getString("NAME"));
-                map.put("TYPE", rs.getString("TYPE"));
-                map.put("LEN", rs.getString("LEN") != null ? rs.getString("LEN") : "0");
-                map.put("PK", rs.getString("PK"));
-                map.put("NULLABLE", rs.getString("NULLABLE"));
-                map.put("REMARK", rs.getString("REMARK") != null ? rs.getString("REMARK") : "");
-                list.add(map);
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, tableName);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    Map<String, String> map = new HashMap<>();
+                    map.put("POS", rs.getString("POS"));
+                    map.put("NAME", rs.getString("NAME"));
+                    map.put("TYPE", rs.getString("TYPE"));
+                    map.put("LEN", rs.getString("LEN") != null ? rs.getString("LEN") : "0");
+                    map.put("PK", rs.getString("PK"));
+                    map.put("NULLABLE", rs.getString("NULLABLE"));
+                    map.put("REMARK", rs.getString("REMARK") != null ? rs.getString("REMARK") : "");
+                    list.add(map);
+                }
             }
         }
         return list;
