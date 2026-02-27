@@ -1,14 +1,16 @@
-package com.sqlgen.mcp.service;
+﻿package com.sqlgen.mcp.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,14 +21,19 @@ public class McpService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper mapper = new ObjectMapper();
     private JsonNode schemaIndexCache = null;
+    private final String schemaOutputDir;
 
-    public McpService(JdbcTemplate jdbcTemplate) {
+    public McpService(JdbcTemplate jdbcTemplate, @Value("${db.schema-output-dir:docs/schema}") String schemaOutputDir) {
         this.jdbcTemplate = jdbcTemplate;
+        this.schemaOutputDir = schemaOutputDir;
         loadSchemaIndex();
     }
 
     private void loadSchemaIndex() {
-        try (var is = getClass().getClassLoader().getResourceAsStream("docs/schema/schema_index.json")) {
+        //yml에서 가져오도록 코드 수정
+        var locations = schemaOutputDir + "/schema_index.json";
+        
+        try (var is = new FileInputStream(locations)) {
             if (is != null) {
                 schemaIndexCache = mapper.readTree(is);
                 logger.info("Schema index loaded from classpath.");
@@ -54,7 +61,7 @@ public class McpService {
     }
 
     public String getTableSchema(String tableName) {
-        try (var is = getClass().getClassLoader().getResourceAsStream("docs/schema/tables/" + tableName.toLowerCase() + ".json")) {
+        try (var is = getClass().getClassLoader().getResourceAsStream(schemaOutputDir + "/tables/" + tableName.toLowerCase() + ".json")) {
             if (is == null) return "Table '" + tableName + "' not found.";
             return mapper.writeValueAsString(mapper.readTree(is));
         } catch (Exception e) {

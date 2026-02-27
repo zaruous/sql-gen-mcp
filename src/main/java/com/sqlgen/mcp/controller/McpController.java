@@ -18,10 +18,70 @@ public class McpController {
     private final Map<String, SseClient> sessions = new ConcurrentHashMap<>();
     private final McpHandler mcpHandler;
     private final com.sqlgen.mcp.service.SchemaService schemaService;
+    private final com.sqlgen.mcp.service.McpService mcpService;
 
-    public McpController(McpHandler mcpHandler, com.sqlgen.mcp.service.SchemaService schemaService) {
+    public McpController(McpHandler mcpHandler, com.sqlgen.mcp.service.SchemaService schemaService, com.sqlgen.mcp.service.McpService mcpService) {
         this.mcpHandler = mcpHandler;
         this.schemaService = schemaService;
+        this.mcpService = mcpService;
+    }
+
+    @OpenApi(
+        path = "/tables",
+        methods = HttpMethod.GET,
+        summary = "Get list of all tables",
+        responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = String.class))
+    )
+    public void getTableList(Context ctx) throws Exception {
+        ctx.contentType("application/json").result(mcpService.getTableList());
+    }
+
+    @OpenApi(
+        path = "/tables/search",
+        methods = HttpMethod.GET,
+        summary = "Search tables by name or comment",
+        queryParams = @OpenApiParam(name = "q", description = "Search query", required = true),
+        responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = String.class))
+    )
+    public void searchTables(Context ctx) throws Exception {
+        String query = ctx.queryParam("q");
+        ctx.contentType("application/json").result(mcpService.searchTables(query));
+    }
+
+    @OpenApi(
+        path = "/tables/{name}/schema",
+        methods = HttpMethod.GET,
+        summary = "Get schema for a specific table",
+        pathParams = @OpenApiParam(name = "name", description = "Table name", required = true),
+        responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = String.class))
+    )
+    public void getTableSchema(Context ctx) throws Exception {
+        String tableName = ctx.pathParam("name");
+        ctx.contentType("application/json").result(mcpService.getTableSchema(tableName));
+    }
+
+    @OpenApi(
+        path = "/query/read",
+        methods = HttpMethod.POST,
+        summary = "Execute a read-only SQL query",
+        requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = String.class)),
+        responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = String.class))
+    )
+    public void readQuery(Context ctx) throws Exception {
+        String sql = ctx.body();
+        ctx.contentType("application/json").result(mcpService.executeReadQuery(sql));
+    }
+
+    @OpenApi(
+        path = "/query/write",
+        methods = HttpMethod.POST,
+        summary = "Execute a write (DML) SQL query",
+        requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = String.class)),
+        responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = String.class))
+    )
+    public void writeQuery(Context ctx) throws Exception {
+        String sql = ctx.body();
+        ctx.contentType("application/json").result(mcpService.executeWriteQuery(sql));
     }
 
     @OpenApi(

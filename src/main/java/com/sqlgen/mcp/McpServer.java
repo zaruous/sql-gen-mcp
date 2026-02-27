@@ -65,6 +65,14 @@ public class McpServer {
         app.get("/", mcpController::getIndex);
         app.sse("/sse", mcpController::connectSse);
         app.post("/messages", mcpController::handleMessages);
+        
+        // Table & Query APIs
+        app.get("/tables", mcpController::getTableList);
+        app.get("/tables/search", mcpController::searchTables);
+        app.get("/tables/{name}/schema", mcpController::getTableSchema);
+        app.post("/query/read", mcpController::readQuery);
+        app.post("/query/write", mcpController::writeQuery);
+        app.post("/schema/extract", mcpController::extractSchema);
 
         logger.info("SQL MCP Server started on port {}. Swagger: http://localhost:{}/swagger", finalPort, finalPort);
     }
