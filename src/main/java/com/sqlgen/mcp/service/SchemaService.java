@@ -21,7 +21,7 @@ import java.util.Map;
 public class SchemaService {
     private static final Logger logger = LoggerFactory.getLogger(SchemaService.class);
     private final DataSource dataSource;
-    private String defaultOutputDir = "src/main/resources/docs/schema";
+    private String defaultOutputDir = "docs/schema";
 
     public SchemaService(DataSource dataSource) {
         this.dataSource = dataSource;
@@ -49,7 +49,7 @@ public class SchemaService {
         public String remark;
     }
 
-    public void extractAndSave(String outputDir) {
+    public boolean extractAndSave(String outputDir) {
         String finalDir = (outputDir == null || outputDir.isEmpty()) ? defaultOutputDir : outputDir;
         try (Connection conn = dataSource.getConnection()) {
             String dbType = getDbType(conn);
@@ -79,8 +79,10 @@ public class SchemaService {
                 tables.add(tableInfo);
             }
             save(tables, finalDir);
+            return true;
         } catch (SQLException e) {
-            logger.error("Extraction failed", e);
+            logger.error("Extraction failed: {}", e.getMessage());
+            return false;
         }
     }
 

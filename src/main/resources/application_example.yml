@@ -1,0 +1,17 @@
+server:
+  port: 8081
+
+db:
+  driver: org.postgresql.Driver
+  url: jdbc:postgresql://localhost:5432/dbmes
+  user: tester1
+  pw: tester1
+  schema-output-dir: docs/schema
+
+# Examples for other DBMS
+# MSSQL:
+#   driver: com.microsoft.sqlserver.jdbc.SQLServerDriver
+#   url: jdbc:sqlserver://localhost:1433;databaseName=mydb;encrypt=false
+# Oracle:
+#   driver: oracle.jdbc.OracleDriver
+#   url: jdbc:oracle:thin:@localhost:1521:xe
