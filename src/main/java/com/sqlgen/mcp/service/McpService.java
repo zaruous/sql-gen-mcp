@@ -1,4 +1,4 @@
-﻿package com.sqlgen.mcp.service;
+package com.sqlgen.mcp.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -9,11 +9,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Service
 public class McpService {
@@ -30,16 +28,12 @@ public class McpService {
     }
 
     private void loadSchemaIndex() {
-        //yml에서 가져오도록 코드 수정
-        var locations = schemaOutputDir + "/schema_index.json";
-        
-        try (var is = new FileInputStream(locations)) {
-            if (is != null) {
-                schemaIndexCache = mapper.readTree(is);
-                logger.info("Schema index loaded from classpath.");
-            }
+        String locations = schemaOutputDir + "/schema_index.json";
+        try (FileInputStream is = new FileInputStream(locations)) {
+            schemaIndexCache = mapper.readTree(is);
+            logger.info("Schema index loaded from {}.", locations);
         } catch (Exception e) {
-            logger.error("Schema load error", e);
+            logger.error("Schema load error: {}", e.getMessage());
         }
     }
 
@@ -61,11 +55,11 @@ public class McpService {
     }
 
     public String getTableSchema(String tableName) {
-        try (var is = getClass().getClassLoader().getResourceAsStream(schemaOutputDir + "/tables/" + tableName.toLowerCase() + ".json")) {
-            if (is == null) return "Table '" + tableName + "' not found.";
+        String path = schemaOutputDir + "/tables/" + tableName.toLowerCase() + ".json";
+        try (FileInputStream is = new FileInputStream(path)) {
             return mapper.writeValueAsString(mapper.readTree(is));
         } catch (Exception e) {
-            return "Error: " + e.getMessage();
+            return "Error finding schema for table '" + tableName + "': " + e.getMessage();
         }
     }
 
