@@ -94,10 +94,17 @@ public class McpHandler {
                 .build())
             .callHandler((exchange, request) -> {
                 String tableName = (String) request.arguments().get("tableName");
-                return McpSchema.CallToolResult.builder()
-                    .content(List.of(new McpSchema.TextContent(mcpService.getTableSchema(tableName))))
-                    .isError(false)
-                    .build();
+                try {
+                    return McpSchema.CallToolResult.builder()
+                        .content(List.of(new McpSchema.TextContent(mcpService.getTableSchema(tableName))))
+                        .isError(false)
+                        .build();
+                } catch (Exception e) {
+                    return McpSchema.CallToolResult.builder()
+                        .content(List.of(new McpSchema.TextContent("Error: " + e.getMessage())))
+                        .isError(true)
+                        .build();
+                }
             })
             .build());
 
@@ -141,6 +148,31 @@ public class McpHandler {
                     .content(List.of(new McpSchema.TextContent(mcpService.executeWriteQuery(sql))))
                     .isError(false)
                     .build();
+            })
+            .build());
+
+        // 6. Explain Query
+        server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+            .tool(McpSchema.Tool.builder()
+                .name("explain_query")
+                .description("SQL의 실행 계획(Execution Plan)을 분석합니다.")
+                .inputSchema(new McpSchema.JsonSchema("object", 
+                    Map.of("sql", Map.of("type", "string", "description", "분석할 SQL 문")), 
+                    List.of("sql"), false, null, null))
+                .build())
+            .callHandler((exchange, request) -> {
+                String sql = (String) request.arguments().get("sql");
+                try {
+                    return McpSchema.CallToolResult.builder()
+                        .content(List.of(new McpSchema.TextContent(mcpService.explainQuery(sql))))
+                        .isError(false)
+                        .build();
+                } catch (Exception e) {
+                    return McpSchema.CallToolResult.builder()
+                        .content(List.of(new McpSchema.TextContent("Explain error: " + e.getMessage())))
+                        .isError(true)
+                        .build();
+                }
             })
             .build());
     }

@@ -60,8 +60,14 @@ public class McpController {
             return Mono.fromRunnable(() -> {
                 try {
                     String json = McpJsonDefaults.getMapper().writeValueAsString(message);
-                    logger.info("Sending SSE message: {}", json);
-                    sseClient.sendEvent("message", json);
+                    logger.info("Sending SSE message to client: {}", json);
+                    
+                    synchronized (sseClient) {
+                        java.io.PrintWriter writer = sseClient.ctx().res().getWriter();
+                        writer.write("event: message\n");
+                        writer.write("data: " + json + "\n\n");
+                        writer.flush();
+                    }
                 } catch (Exception e) {
                     logger.error("Failed to send SSE message: {}", e.getMessage());
                 }
@@ -76,13 +82,9 @@ public class McpController {
 
     @OpenApi(path = "/sse", methods = HttpMethod.GET, summary = "MCP SSE connection")
     public void connectSse(SseClient sseClient) {
-        String sessionId = sseClient.ctx().queryParam("sessionId");
-        if (sessionId == null) {
-            sseClient.close();
-            return;
-        }
-
+        String sessionId = UUID.randomUUID().toString();
         JavalinSseTransport transport = new JavalinSseTransport(sseClient);
+        
         McpServerSession[] sessionHolder = new McpServerSession[1];
         McpServerTransportProvider provider = new McpServerTransportProvider() {
             @Override
@@ -97,7 +99,23 @@ public class McpController {
         McpSyncServer server = mcpHandler.createServer(provider);
         sessions.put(sessionId, new SseBridgeSession(server, sessionHolder[0], sseClient));
         
-        logger.info("SSE Connection established for session: {}", sessionId);
+        // endpoint 이벤트 전송
+        synchronized (sseClient) {
+            try {
+                String host = sseClient.ctx().header("Host");
+                String scheme = sseClient.ctx().scheme();
+                String endpointUrl = scheme + "://" + host + "/messages?sessionId=" + sessionId;
+                
+                java.io.PrintWriter writer = sseClient.ctx().res().getWriter();
+                writer.write("event: endpoint\n");
+                writer.write("data: " + endpointUrl + "\n\n");
+                writer.flush();
+                logger.info("New MCP SSE Session created: {}, endpoint={}", sessionId, endpointUrl);
+            } catch (Exception e) {
+                logger.error("Failed to send endpoint event", e);
+            }
+        }
+
         sseClient.onClose(() -> {
             sessions.remove(sessionId);
             server.close();
@@ -108,18 +126,32 @@ public class McpController {
     public void handleMessages(Context ctx) {
         String body = ctx.body();
         String sessionId = ctx.queryParam("sessionId");
-        if (sessionId == null) sessionId = ctx.pathParamMap().get("sessionId");
+        if (sessionId == null) {
+            sessionId = ctx.pathParamMap().get("sessionId");
+        }
         
+        if (sessionId == null) {
+            ctx.status(400).result("{\"error\":\"Missing sessionId\"}");
+            return;
+        }
+
         SseBridgeSession sessionWrapper = sessions.get(sessionId);
         if (sessionWrapper != null) {
             try {
-                logger.info("Received Message ({}): {}", sessionId, body);
+                logger.info("McpController.handleMessages (Session: {}): body={}", sessionId, body);
                 
-                // 수동 인터셉트 (최종 수단)
+                // 수동 문자열 검사를 통한 initialize 및 tools/list 처리
                 if (body.contains("\"method\":\"initialize\"")) {
                     String id = extractId(body);
                     String response = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"sql-gen-mcp\",\"version\":\"1.0.0\"}}}";
-                    sessionWrapper.sseClient.sendEvent("message", response);
+                    
+                    synchronized (sessionWrapper.sseClient) {
+                        java.io.PrintWriter writer = sessionWrapper.sseClient.ctx().res().getWriter();
+                        writer.write("event: message\n");
+                        writer.write("data: " + response + "\n\n");
+                        writer.flush();
+                    }
+                    logger.info("Sent manual initialize response for session {}", sessionId);
                     ctx.status(200).result("Accepted");
                     return;
                 }
@@ -131,13 +163,58 @@ public class McpController {
                         "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}," +
                         "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}}," +
                         "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
-                        "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}" +
+                        "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
+                        "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}" +
                         "]}}";
-                    sessionWrapper.sseClient.sendEvent("message", response);
+                    
+                    synchronized (sessionWrapper.sseClient) {
+                        java.io.PrintWriter writer = sessionWrapper.sseClient.ctx().res().getWriter();
+                        writer.write("event: message\n");
+                        writer.write("data: " + response + "\n\n");
+                        writer.flush();
+                    }
+                    logger.info("Sent manual tools/list response for session {}", sessionId);
                     ctx.status(200).result("Accepted");
                     return;
                 }
 
+                // 3. explain_query 호출 인터셉트
+                if (body.contains("\"method\":\"tools/call\"") && body.contains("\"name\":\"explain_query\"")) {
+                    String id = extractId(body);
+                    int sqlIdx = body.indexOf("\"sql\":");
+                    String sql = "";
+                    if (sqlIdx > 0) {
+                        int start = body.indexOf("\"", sqlIdx + 6) + 1;
+                        int end = body.indexOf("\"", start);
+                        if (start > 0 && end > start) sql = body.substring(start, end).replace("\\\"", "\"");
+                    }
+                    
+                    final String finalSql = sql;
+                    final String finalId = id;
+                    Mono.fromCallable(() -> mcpService.explainQuery(finalSql))
+                        .subscribe(result -> {
+                            try {
+                                String escapedResult = result.replace("\"", "\\\"");
+                                String response = "{\"jsonrpc\":\"2.0\",\"id\":" + finalId + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + escapedResult + "\"}]}}";
+                                synchronized (sessionWrapper.sseClient) {
+                                    java.io.PrintWriter writer = sessionWrapper.sseClient.ctx().res().getWriter();
+                                    writer.write("event: message\ndata: " + response + "\n\n");
+                                    writer.flush();
+                                }
+                            } catch (Exception e) {
+                                logger.error("Explain fail", e);
+                            }
+                        });
+                    ctx.status(200).result("Accepted");
+                    return;
+                }
+
+                if (body.contains("\"method\":\"notifications/initialized\"")) {
+                    ctx.status(200).result("Accepted");
+                    return;
+                }
+
+                // 일반 메시지는 SDK에 위임
                 Map<String, Object> rawMap = objectMapper.readValue(body, Map.class);
                 McpSchema.JSONRPCMessage msg;
                 if (rawMap.containsKey("method")) {
@@ -157,12 +234,14 @@ public class McpController {
                     null, 
                     err -> logger.error("Async MCP handle error for session {}: {}", finalSessionId, err.getMessage())
                 );
+                
                 ctx.status(200).result("Accepted");
             } catch (Exception e) {
                 logger.error("Message handling error: {}", e.getMessage());
                 ctx.status(500).result("error: " + e.getMessage());
             }
         } else {
+            logger.warn("Session not found: {}", sessionId);
             ctx.status(404).result("Session not found");
         }
     }
@@ -201,6 +280,11 @@ public class McpController {
     @OpenApi(path = "/query/write", methods = HttpMethod.POST, summary = "Write query")
     public void writeQuery(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.executeWriteQuery(ctx.body()));
+    }
+
+    @OpenApi(path = "/query/explain", methods = HttpMethod.POST, summary = "Explain query")
+    public void explainQuery(Context ctx) throws Exception {
+        ctx.contentType("application/json").result(mcpService.explainQuery(ctx.body()));
     }
 
     @OpenApi(path = "/schema/extract", methods = HttpMethod.POST, summary = "Extract schema")
