@@ -27,12 +27,14 @@ public class McpController {
     private final McpHandler mcpHandler;
     private final com.sqlgen.mcp.service.SchemaService schemaService;
     private final com.sqlgen.mcp.service.McpService mcpService;
+    private final com.sqlgen.mcp.service.SchemaInitService schemaInitService;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
-    public McpController(McpHandler mcpHandler, com.sqlgen.mcp.service.SchemaService schemaService, com.sqlgen.mcp.service.McpService mcpService, com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+    public McpController(McpHandler mcpHandler, com.sqlgen.mcp.service.SchemaService schemaService, com.sqlgen.mcp.service.McpService mcpService, com.sqlgen.mcp.service.SchemaInitService schemaInitService, com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.mcpHandler = mcpHandler;
         this.schemaService = schemaService;
         this.mcpService = mcpService;
+        this.schemaInitService = schemaInitService;
         this.objectMapper = objectMapper;
     }
 
@@ -291,6 +293,23 @@ public class McpController {
     public void extractSchema(Context ctx) {
         schemaService.extractAndSave(ctx.queryParam("outputDir"));
         ctx.result("Schema extraction completed.");
+    }
+
+    @OpenApi(
+        path = "/db/initializeSchema",
+        methods = HttpMethod.POST,
+        summary = "Database Initialization (Schema extraction)",
+        queryParams = {
+            @OpenApiParam(name = "outputDir", description = "Output directory for schema files", type = String.class)
+        }
+    )
+    public void initializeSchema(Context ctx) {
+        boolean success = schemaInitService.initializeSchema(ctx.queryParam("outputDir"));
+        if (success) {
+            ctx.result("Database initialization completed successfully.");
+        } else {
+            ctx.status(500).result("Database initialization failed.");
+        }
     }
 
     @OpenApi(path = "/", methods = HttpMethod.GET, summary = "Status check")

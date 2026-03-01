@@ -102,6 +102,7 @@ public class SchemaService {
 
         ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
+        // JSON 저장
         for (TableInfo table : tables) {
             try {
                 mapper.writeValue(new File(tablesDir, table.tableName.toLowerCase() + ".json"), table);
@@ -110,6 +111,7 @@ public class SchemaService {
             }
         }
 
+        // 인덱스 파일 생성
         List<Map<String, Object>> index = tables.stream().map(t -> {
             Map<String, Object> map = new HashMap<>();
             map.put("tableName", t.tableName);
@@ -122,6 +124,32 @@ public class SchemaService {
             mapper.writeValue(new File(dir, "schema_index.json"), index);
         } catch (IOException e) {
             logger.error("Index save failed", e);
+        }
+
+        // 모듈별 마크다운 파일 생성
+        Map<String, List<TableInfo>> moduleGroups = tables.stream()
+                .collect(java.util.stream.Collectors.groupingBy(t -> t.module));
+
+        for (Map.Entry<String, List<TableInfo>> entry : moduleGroups.entrySet()) {
+            String module = entry.getKey();
+            List<TableInfo> moduleTables = entry.getValue();
+            File mdFile = new File(dir, module + "_SCHEMA.md");
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(mdFile))) {
+                writer.write("# " + module + " Schema Definition\n\n");
+                for (TableInfo table : moduleTables) {
+                    writer.write("## " + table.tableName + " (" + table.comment + ")\n\n");
+                    writer.write("| No | Column | Type | Length | PK | Null | Remark |\n");
+                    writer.write("|---|---|---|---|---|---|---|\n");
+                    for (ColumnInfo col : table.columns) {
+                        writer.write(String.format("| %s | %s | %s | %s | %s | %s | %s |\n",
+                                col.pos, col.name, col.type, col.len, col.pk, col.nullable, col.remark));
+                    }
+                    writer.write("\n");
+                }
+                logger.info("Markdown schema file saved: {}", mdFile.getAbsolutePath());
+            } catch (IOException e) {
+                logger.error("Markdown save failed: {}", mdFile.getName(), e);
+            }
         }
     }
 

@@ -19,33 +19,53 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 public class DatabaseConfig {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseConfig.class);
 
+    private java.io.InputStream getConfigurationStream() throws java.io.IOException {
+        java.io.File externalConfig = new java.io.File("application.yml");
+        if (externalConfig.exists()) {
+            logger.info("Using external configuration from application.yml");
+            return new java.io.FileInputStream(externalConfig);
+        }
+        return DatabaseConfig.class.getClassLoader().getResourceAsStream("application.yml");
+    }
+
     @Bean
     public DataSource dataSource() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
         ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
         
-        try (var is = DatabaseConfig.class.getClassLoader().getResourceAsStream("application.yml")) {
+        try (var is = getConfigurationStream()) {
+            JsonNode dbNode = null;
             if (is != null) {
-                JsonNode root = yamlMapper.readTree(is);
-                JsonNode db = root.path("db");
-                
-                dataSource.setDriverClassName(db.path("driver").asText("org.postgresql.Driver"));
-                dataSource.setUrl(db.path("url").asText("jdbc:postgresql://localhost:5432/postgres"));
-                dataSource.setUsername(db.path("user").asText("postgres"));
-                dataSource.setPassword(db.path("pw").asText("password"));
-                
-                logger.info("Loaded DB config from application.yml: {}", dataSource.getUrl());
-            } else {
-                logger.warn("application.yml not found, using defaults.");
-                dataSource.setDriverClassName("org.postgresql.Driver");
-                dataSource.setUrl("jdbc:postgresql://localhost:5432/postgres");
-                dataSource.setUsername("postgres");
-                dataSource.setPassword("password");
+                dbNode = yamlMapper.readTree(is).path("db");
             }
+
+            // 환경 변수 우선 적용 (Docker Desktop UI에서 확인 및 수정 가능)
+            String driver = getEnvOrYaml(dbNode, "driver", "DB_DRIVER", "org.postgresql.Driver");
+            String url = getEnvOrYaml(dbNode, "url", "DB_URL", "jdbc:postgresql://localhost:5432/postgres");
+            String user = getEnvOrYaml(dbNode, "user", "DB_USER", "postgres");
+            String pw = getEnvOrYaml(dbNode, "pw", "DB_PW", "password");
+
+            dataSource.setDriverClassName(driver);
+            dataSource.setUrl(url);
+            dataSource.setUsername(user);
+            dataSource.setPassword(pw);
+            
+            logger.info("Database Connection Info: URL={}, Driver={}", url, driver);
         } catch (Exception e) {
-            logger.error("Error loading application.yml", e);
+            logger.error("Error loading database configuration", e);
         }
         return dataSource;
+    }
+
+    private String getEnvOrYaml(JsonNode dbNode, String yamlKey, String envKey, String defaultValue) {
+        String envValue = System.getenv(envKey);
+        if (envValue != null && !envValue.isEmpty()) {
+            return envValue;
+        }
+        if (dbNode != null && dbNode.has(yamlKey)) {
+            return dbNode.path(yamlKey).asText();
+        }
+        return defaultValue;
     }
 
     @Bean
@@ -57,7 +77,7 @@ public class DatabaseConfig {
     public com.sqlgen.mcp.service.SchemaService schemaService(DataSource dataSource) {
         com.sqlgen.mcp.service.SchemaService service = new com.sqlgen.mcp.service.SchemaService(dataSource);
         ObjectMapper yamlMapper = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
-        try (var is = DatabaseConfig.class.getClassLoader().getResourceAsStream("application.yml")) {
+        try (var is = getConfigurationStream()) {
             if (is != null) {
                 JsonNode root = yamlMapper.readTree(is);
                 String outputDir = root.path("db").path("schema-output-dir").asText();

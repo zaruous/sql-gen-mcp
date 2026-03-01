@@ -1,0 +1,13 @@
+target/
+*.log
+.git/
+.idea/
+*.iml
+.settings/
+.project
+.classpath
+.factorypath
+bin/
+.geminiignore
+.gemini/
+dependency-reduced-pom.xml

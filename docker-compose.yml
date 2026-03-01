@@ -1,0 +1,27 @@
+services:
+  mcp-server:
+    build: .
+    ports:
+      - "8081:8081"
+      - "7070:7070"
+    volumes:
+      - ./application.yml:/app/application.yml
+      - ./logback.xml:/app/logback.xml
+      - ./docs/schema:/app/docs/schema
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dbmes
+      POSTGRES_USER: tester1
+      POSTGRES_PASSWORD: tester1
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tester1 -d dbmes"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

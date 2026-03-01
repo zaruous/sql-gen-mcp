@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Project package log level -->
+    <logger name="com.sqlgen.mcp" level="DEBUG" />
+    
+    <!-- Spring framework log level -->
+    <logger name="org.springframework" level="INFO" />
+    
+    <!-- MCP SDK log level -->
+    <logger name="io.modelcontextprotocol" level="DEBUG" />
+
+    <!-- Root log level -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+</configuration>

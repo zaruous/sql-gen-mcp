@@ -69,7 +69,7 @@ public class McpServer {
         
         com.fasterxml.jackson.databind.ObjectMapper yamlMapper = new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
         int port = 7070;
-
+        
         java.io.File externalConfig = new java.io.File("application.yml");
         try (java.io.InputStream is = externalConfig.exists() 
                 ? new java.io.FileInputStream(externalConfig) 
@@ -96,7 +96,12 @@ public class McpServer {
             config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()));
             config.registerPlugin(new OpenApiPlugin(openApiConfig -> {
                 openApiConfig.withDefinitionConfiguration((version, definition) -> {
-                    definition.withOpenApiInfo(info -> {
+                    // depreacated 처리
+                    // definition.withOpenApiInfo(info ->{
+                    //     info.setTitle("SQL MCP Server API");
+                    //     info.setVersion("1.1.0");
+                    // });
+                    definition.withInfo(info -> {
                         info.setTitle("SQL MCP Server API");
                         info.setVersion("1.1.0");
                     });
@@ -117,6 +122,7 @@ public class McpServer {
         app.post("/query/read", mcpController::readQuery);
         app.post("/query/write", mcpController::writeQuery);
         app.post("/schema/extract", mcpController::extractSchema);
+        app.post("/db/initializeSchema", mcpController::initializeSchema);
 
         logger.info("SQL MCP Server started on port {}. Swagger: http://localhost:{}/swagger", finalPort, finalPort);
     }

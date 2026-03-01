@@ -66,8 +66,37 @@ mvn exec:java -Dexec.mainClass="com.sqlgen.mcp.McpServer" -Dexec.args="9090"
 
 ### 2. 빌드된 JAR로 실행
 ```bash
-java -jar target/sql-gen-mcp-1.0-SNAPSHOT.jar
+java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar
 ```
+
+---
+
+## 🐳 Docker 사용법
+
+### 1. Docker 빌드
+```bash
+docker build -t sql-gen-mcp .
+```
+
+### 2. Docker 실행
+`application.yml`이 현재 디렉토리에 있는 경우:
+실행 예시1)
+```bash
+docker run -p 7070:7070 -p 8081:8081 -v ./application.yml:/app/application.yml sql-gen-mcp
+```
+실행 예시2)
+```bash
+docker run -d --name mcp-server -p 7070:7070 -e DB_URL="jdbc:postgresql://192.168.45.7:5433/dbmes" -e DB_USER="tester1" -e DB_PW="tester1" sql-gen-mcp
+```
+
+### 3. Docker Compose (DB 포함)
+제공된 `docker-compose.yml`을 사용하여 PostgreSQL과 함께 즉시 실행할 수 있습니다.
+```bash
+docker-compose up -d
+```
+- **MCP Server:** `http://localhost:7070`
+- **Swagger:** `http://localhost:7070/swagger`
+- **PostgreSQL:** `localhost:5432` (user/pw: tester1/tester1)
 
 ---
 
