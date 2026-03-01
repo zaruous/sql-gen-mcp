@@ -259,32 +259,42 @@ public class McpController {
         return "null";
     }
 
-    @OpenApi(path = "/tables", methods = HttpMethod.GET, summary = "Get tables")
+    @OpenApi(path = "/tables", methods = HttpMethod.GET, summary = "Get tables", 
+        description = "Returns list of all tables in the database with their comments")
     public void getTableList(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.getTableList());
     }
 
-    @OpenApi(path = "/tables/search", methods = HttpMethod.GET, summary = "Search tables")
+    @OpenApi(path = "/tables/search", methods = HttpMethod.GET, summary = "Search tables",
+        queryParams = {
+            @OpenApiParam(name = "q", description = "Keyword to search for in table names", required = true)
+        })
     public void searchTables(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.searchTables(ctx.queryParam("q")));
     }
 
-    @OpenApi(path = "/tables/{name}/schema", methods = HttpMethod.GET, summary = "Get table schema")
+    @OpenApi(path = "/tables/{name}/schema", methods = HttpMethod.GET, summary = "Get table schema",
+        pathParams = {
+            @OpenApiParam(name = "name", description = "Target table name", required = true)
+        })
     public void getTableSchema(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.getTableSchema(ctx.pathParam("name")));
     }
 
-    @OpenApi(path = "/query/read", methods = HttpMethod.POST, summary = "Read query")
+    @OpenApi(path = "/query/read", methods = HttpMethod.POST, summary = "Read query",
+        requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = String.class), description = "SELECT SQL statement", required = true))
     public void readQuery(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.executeReadQuery(ctx.body()));
     }
 
-    @OpenApi(path = "/query/write", methods = HttpMethod.POST, summary = "Write query")
+    @OpenApi(path = "/query/write", methods = HttpMethod.POST, summary = "Write query",
+        requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = String.class), description = "INSERT/UPDATE/DELETE SQL statement", required = true))
     public void writeQuery(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.executeWriteQuery(ctx.body()));
     }
 
-    @OpenApi(path = "/query/explain", methods = HttpMethod.POST, summary = "Explain query")
+    @OpenApi(path = "/query/explain", methods = HttpMethod.POST, summary = "Explain query",
+        requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = String.class), description = "SQL statement to explain", required = true))
     public void explainQuery(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.explainQuery(ctx.body()));
     }
