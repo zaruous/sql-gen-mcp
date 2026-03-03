@@ -118,6 +118,7 @@ public class McpServer {
         app.post("/query/read", mcpController::readQuery);
         app.post("/query/write", mcpController::writeQuery);
         app.post("/query/explain", mcpController::explainQuery);
+        app.get("/knowledge/search", mcpController::searchKnowledge);
         app.post("/schema/extract", mcpController::extractSchema);
         app.post("/db/initializeSchema", mcpController::initializeSchema);
 

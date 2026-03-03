@@ -28,13 +28,15 @@ public class McpController {
     private final com.sqlgen.mcp.service.SchemaService schemaService;
     private final com.sqlgen.mcp.service.McpService mcpService;
     private final com.sqlgen.mcp.service.SchemaInitService schemaInitService;
+    private final com.sqlgen.mcp.service.VectorStoreService vectorStoreService;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
-    public McpController(McpHandler mcpHandler, com.sqlgen.mcp.service.SchemaService schemaService, com.sqlgen.mcp.service.McpService mcpService, com.sqlgen.mcp.service.SchemaInitService schemaInitService, com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+    public McpController(McpHandler mcpHandler, com.sqlgen.mcp.service.SchemaService schemaService, com.sqlgen.mcp.service.McpService mcpService, com.sqlgen.mcp.service.SchemaInitService schemaInitService, com.sqlgen.mcp.service.VectorStoreService vectorStoreService, com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.mcpHandler = mcpHandler;
         this.schemaService = schemaService;
         this.mcpService = mcpService;
         this.schemaInitService = schemaInitService;
+        this.vectorStoreService = vectorStoreService;
         this.objectMapper = objectMapper;
     }
 
@@ -166,7 +168,8 @@ public class McpController {
                         "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}}," +
                         "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
                         "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
-                        "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}" +
+                        "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
+                        "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}" +
                         "]}}";
                     
                     synchronized (sessionWrapper.sseClient) {
@@ -205,6 +208,37 @@ public class McpController {
                                 }
                             } catch (Exception e) {
                                 logger.error("Explain fail", e);
+                            }
+                        });
+                    ctx.status(200).result("Accepted");
+                    return;
+                }
+
+                // 4. search_knowledge_base 호출 인터셉트
+                if (body.contains("\"method\":\"tools/call\"") && body.contains("\"name\":\"search_knowledge_base\"")) {
+                    String id = extractId(body);
+                    int queryIdx = body.indexOf("\"query\":");
+                    String query = "";
+                    if (queryIdx > 0) {
+                        int start = body.indexOf("\"", queryIdx + 8) + 1;
+                        int end = body.indexOf("\"", start);
+                        if (start > 0 && end > start) query = body.substring(start, end).replace("\\\"", "\"");
+                    }
+                    
+                    final String finalQuery = query;
+                    final String finalId = id;
+                    Mono.fromCallable(() -> vectorStoreService.search(finalQuery, 5))
+                        .subscribe(results -> {
+                            try {
+                                String joined = String.join("\\n---\\n", results).replace("\"", "\\\"");
+                                String response = "{\"jsonrpc\":\"2.0\",\"id\":" + finalId + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + joined + "\"}]}}";
+                                synchronized (sessionWrapper.sseClient) {
+                                    java.io.PrintWriter writer = sessionWrapper.sseClient.ctx().res().getWriter();
+                                    writer.write("event: message\ndata: " + response + "\n\n");
+                                    writer.flush();
+                                }
+                            } catch (Exception e) {
+                                logger.error("Knowledge search fail", e);
                             }
                         });
                     ctx.status(200).result("Accepted");
@@ -297,6 +331,16 @@ public class McpController {
         requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = String.class), description = "SQL statement to explain", required = true))
     public void explainQuery(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.explainQuery(ctx.body()));
+    }
+
+    @OpenApi(path = "/knowledge/search", methods = HttpMethod.GET, summary = "Search knowledge base (RAG)",
+        queryParams = {
+            @OpenApiParam(name = "q", description = "Natural language query", required = true)
+        })
+    public void searchKnowledge(Context ctx) throws Exception {
+        String query = ctx.queryParam("q");
+        List<String> results = vectorStoreService.search(query, 5);
+        ctx.contentType("application/json").result(objectMapper.writeValueAsString(Map.of("results", results)));
     }
 
     @OpenApi(path = "/schema/extract", methods = HttpMethod.POST, summary = "Extract schema")

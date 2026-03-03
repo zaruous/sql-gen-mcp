@@ -17,9 +17,11 @@ import java.util.Map;
 public class McpHandler {
     private static final Logger logger = LoggerFactory.getLogger(McpHandler.class);
     private final McpService mcpService;
+    private final com.sqlgen.mcp.service.VectorStoreService vectorStoreService;
 
-    public McpHandler(McpService mcpService) {
+    public McpHandler(McpService mcpService, com.sqlgen.mcp.service.VectorStoreService vectorStoreService) {
         this.mcpService = mcpService;
+        this.vectorStoreService = vectorStoreService;
     }
 
     public McpSyncServer createServer(McpServerTransportProvider transportProvider) {
@@ -170,6 +172,32 @@ public class McpHandler {
                 } catch (Exception e) {
                     return McpSchema.CallToolResult.builder()
                         .content(List.of(new McpSchema.TextContent("Explain error: " + e.getMessage())))
+                        .isError(true)
+                        .build();
+                }
+            })
+            .build());
+
+        // 7. Search Knowledge Base (RAG)
+        server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+            .tool(McpSchema.Tool.builder()
+                .name("search_knowledge_base")
+                .description("자연어로 데이터베이스 스키마 및 테이블 정의서(docs) 검색")
+                .inputSchema(new McpSchema.JsonSchema("object", 
+                    Map.of("query", Map.of("type", "string", "description", "검색할 자연어 질문 또는 키워드")), 
+                    List.of("query"), false, null, null))
+                .build())
+            .callHandler((exchange, request) -> {
+                String query = (String) request.arguments().get("query");
+                try {
+                    List<String> results = vectorStoreService.search(query, 5);
+                    return McpSchema.CallToolResult.builder()
+                        .content(List.of(new McpSchema.TextContent(String.join("\n---\n", results))))
+                        .isError(false)
+                        .build();
+                } catch (Exception e) {
+                    return McpSchema.CallToolResult.builder()
+                        .content(List.of(new McpSchema.TextContent("Knowledge search error: " + e.getMessage())))
                         .isError(true)
                         .build();
                 }
