@@ -4,9 +4,27 @@ server:
 mcp:
   port: 7070
 
+# RAG & Vector Store 설정
+ai:
+  vector-store:
+    # 사용할 임베딩 제공자 선택: ollama, vllm, gemini
+    provider: local
+    
+    providers:
+      ollama:
+        base-url: "http://localhost:11434"
+        model-name: "nomic-embed-text" # 임베딩 전용 모델 추천
+      vllm:
+        base-url: "http://localhost:8000/v1"
+        model-name: "your-vllm-model"
+        api-key: "optional"
+      gemini:
+        api-key: "your-gemini-api-key"
+        model-name: "text-embedding-004"
+
 db:
   driver: org.postgresql.Driver
-  url: jdbc:postgresql://localhost:5432/dbmes
+  url: jdbc:postgresql://192.168.45.7:5433/dbmes
   user: tester1
   pw: tester1
   schema-output-dir: docs/schema

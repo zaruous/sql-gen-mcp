@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-// import dev.langchain4j.model.googleai.GeminiEmbeddingModel;
+import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
@@ -41,7 +41,7 @@ public class VectorStoreService {
 
     @PostConstruct
     public void init() {
-        String provider = env.getProperty("ai.vector-store.provider", "ollama");
+        String provider = env.getProperty("ai.vector-store.provider", "local");
         logger.info("Initializing VectorStore with provider: {}", provider);
 
         try {
@@ -57,22 +57,17 @@ public class VectorStoreService {
         String prefix = "ai.vector-store.providers." + provider;
         
         switch (provider.toLowerCase()) {
+            case "local":
+                logger.info("Using In-Process Embedding Model (AllMiniLmL6V2)...");
+                return new AllMiniLmL6V2EmbeddingModel();
+
             case "ollama":
                 return OllamaEmbeddingModel.builder()
                         .baseUrl(env.getProperty(prefix + ".base-url", "http://localhost:11434"))
                         .modelName(env.getProperty(prefix + ".model-name", "nomic-embed-text"))
                         .build();
-            
-            /*
-            case "gemini":
-                return GeminiEmbeddingModel.builder()
-                        .apiKey(env.getProperty(prefix + ".api-key"))
-                        .modelName(env.getProperty(prefix + ".model-name", "text-embedding-004"))
-                        .build();
-            */
 
             case "vllm":
-                // vLLM은 OpenAI 호환 API 사용
                 return OpenAiEmbeddingModel.builder()
                         .baseUrl(env.getProperty(prefix + ".base-url"))
                         .apiKey(env.getProperty(prefix + ".api-key", "no-key"))
@@ -85,8 +80,11 @@ public class VectorStoreService {
     }
 
     private void loadAndIndexDocs() throws Exception {
-        Path path = Paths.get("docs", "schema", "merged_tables.json");
-        File file = path.toFile();
+        // 여러 경로에서 merged_tables.json 찾기 시도
+        File file = new File("docs/schema/merged_tables.json");
+        if (!file.exists()) {
+            file = new File("../docs/schema/merged_tables.json");
+        }
         
         if (!file.exists()) {
             logger.warn("Knowledge file not found at {}. Skipping indexing.", file.getAbsolutePath());
@@ -128,8 +126,15 @@ public class VectorStoreService {
 
     public List<String> search(String query, int maxResults) {
         if (embeddingStore == null || embeddingModel == null) {
+            logger.warn("RAG Search failed: VectorStore is not initialized.");
             return List.of("Error: VectorStore is not initialized.");
         }
+
+        logger.info("\n" +
+                "==================================================\n" +
+                ">>> [RAG] Vector DB Search Request\n" +
+                ">>> Query: {}\n" +
+                "==================================================", query);
 
         EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
                 .queryEmbedding(embeddingModel.embed(query).content())
@@ -138,8 +143,16 @@ public class VectorStoreService {
 
         EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(searchRequest);
         
-        return searchResult.matches().stream()
+        List<String> results = searchResult.matches().stream()
                 .map(match -> match.embedded().text())
                 .collect(Collectors.toList());
+
+        logger.info(">>> [RAG] Found {} relevant matches in Knowledge Base.", results.size());
+        if (!results.isEmpty()) {
+            logger.info(">>> [RAG] Top match summary: \n{}", 
+                results.get(0).split("\n")[0] + " (and more...)");
+        }
+        
+        return results;
     }
 }
