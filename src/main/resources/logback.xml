@@ -15,6 +15,9 @@
     <!-- MCP SDK log level -->
     <logger name="io.modelcontextprotocol" level="DEBUG" />
 
+	<!-- MCP SDK log level -->
+    <logger name="org.eclipse.jetty" level="INFO" />
+    
     <!-- Root log level -->
     <root level="INFO">
         <appender-ref ref="STDOUT" />

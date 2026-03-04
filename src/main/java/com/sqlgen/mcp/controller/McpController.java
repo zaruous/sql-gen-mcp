@@ -339,7 +339,7 @@ public class McpController {
         })
     public void searchKnowledge(Context ctx) throws Exception {
         String query = ctx.queryParam("q");
-        List<String> results = vectorStoreService.search(query, 5);
+        List<String> results = vectorStoreService.search(query, 10);
         ctx.contentType("application/json").result(objectMapper.writeValueAsString(Map.of("results", results)));
     }
 

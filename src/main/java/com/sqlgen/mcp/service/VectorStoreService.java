@@ -81,38 +81,43 @@ public class VectorStoreService {
 
     private void loadAndIndexDocs() throws Exception {
         // 여러 경로에서 merged_tables.json 찾기 시도
-        File file = new File("docs/schema/merged_tables.json");
-        if (!file.exists()) {
-            file = new File("../docs/schema/merged_tables.json");
+//        File file = new File("docs/schema/merged_tables.json");
+        
+    	File dir = new File("docs/schema/tables");
+    	if (!dir.exists()) {
+    		dir = new File("../docs/schema/tables");
         }
         
-        if (!file.exists()) {
-            logger.warn("Knowledge file not found at {}. Skipping indexing.", file.getAbsolutePath());
+        if (!dir.exists()) {
+            logger.warn("Knowledge file not found at {}. Skipping indexing.", dir.getAbsolutePath());
             return;
         }
-
-        logger.info("Indexing tables from {}...", file.getAbsolutePath());
-        JsonNode root = objectMapper.readTree(file);
         
-        if (root.isArray()) {
+		File[] listFiles = dir.listFiles((d, name) -> name.endsWith(".json"));
+		for(File file : listFiles) {
+			logger.info("Indexing tables from {}...", file.getAbsolutePath());
+	        JsonNode root = objectMapper.readTree(file);
+	        
             List<TextSegment> segments = new ArrayList<>();
-            for (JsonNode tableNode : root) {
-                String tableName = tableNode.path("tableName").asText();
-                String comment = tableNode.path("comment").asText();
-                
-                StringBuilder content = new StringBuilder();
-                content.append("Table: ").append(tableName).append("\n");
-                content.append("Description: ").append(comment).append("\n");
-                content.append("Columns: ");
-                
-                JsonNode columns = tableNode.path("columns");
-                if (columns.isArray()) {
-                    for (JsonNode col : columns) {
-                        content.append(col.path("name").asText()).append("(").append(col.path("type").asText()).append("), ");
-                    }
+
+            String tableName = root.path("tableName").asText();
+            String comment = root.path("comment").asText();
+            
+            StringBuilder content = new StringBuilder();
+            content.append("Table: ").append(tableName).append("\n");
+            content.append("Description: ").append(comment).append("\n");
+            content.append("Columns: ");
+            
+            JsonNode columns = root.path("columns");
+            if (columns.isArray()) {
+                for (JsonNode col : columns) {
+                    content.append(col.path("name").asText()).append("(").append(col.path("type").asText()).append(", ");
+                    content.append("pk").append("(").append("Y".equals(col.path("pk").asText())).append("), ");
                 }
-                segments.add(TextSegment.from(content.toString()));
             }
+            
+            segments.add(TextSegment.from(content.toString()));
+        
             
             if (!segments.isEmpty()) {
                 logger.info("Embedding {} table definitions using {}...", segments.size(), embeddingModel.getClass().getSimpleName());
@@ -121,7 +126,9 @@ public class VectorStoreService {
                 }
                 logger.info("Successfully indexed {} tables.", segments.size());
             }
-        }
+        
+		}
+        
     }
 
     public List<String> search(String query, int maxResults) {
@@ -148,6 +155,10 @@ public class VectorStoreService {
                 .collect(Collectors.toList());
 
         logger.info(">>> [RAG] Found {} relevant matches in Knowledge Base.", results.size());
+		for (String t : results) {
+			logger.debug(">>> [RAG] Match snippet: \n{}", t );
+		}
+        
         if (!results.isEmpty()) {
             logger.info(">>> [RAG] Top match summary: \n{}", 
                 results.get(0).split("\n")[0] + " (and more...)");
