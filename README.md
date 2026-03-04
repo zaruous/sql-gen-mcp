@@ -3,15 +3,42 @@
 이 프로젝트는 **Model Context Protocol (MCP)**을 구현한 SQL 데이터베이스 인터페이스 서버입니다. 
 Claude와 같은 AI 에이전트가 데이터베이스 스키마를 탐색하고, 안전하게 쿼리를 실행하며, 테이블 구조를 분석할 수 있도록 돕습니다.
 
+특히, **VectorDB(RAG)** 기능을 통해 수천 개의 테이블 중 사용자의 질문에 가장 적합한 테이블을 자연어로 찾아내는 지능형 검색 기능을 제공합니다.
+
 ---
 
 ## 🚀 주요 기능
-- **MCP 표준 지원 (SSE):** Claude Desktop 등 공식 MCP 클라이언트와 완벽하게 호환됩니다.
-- **Stateless HTTP RPC:** 상태 비유지 방식의 표준 HTTP POST 호출을 지원합니다.
+- **MCP 표준 지원 (SSE & STDIO):** Claude Desktop 및 다양한 MCP 클라이언트와 완벽하게 호환됩니다.
+- **VectorDB 기반 RAG (Knowledge Base):** 테이블 정의서(JSON)를 벡터화하여 자연어 질의에 최적화된 테이블을 추천합니다.
+- **Stateless HTTP RPC:** 상태 비유지 방식의 표준 HTTP 호출을 통해 도구를 실행할 수 있습니다.
 - **멀티 DBMS 지원:** PostgreSQL, Oracle, MSSQL 등 다양한 데이터베이스와 연동 가능합니다.
-- **DB 탐색 도구:** 테이블 목록 조회, 키워드 검색, 상세 스키마 추출 기능을 제공합니다.
-- **SQL 실행:** 읽기 전용(Read-only) 및 쓰기(Write) 쿼리를 구분하여 안전하게 실행합니다.
-- **Swagger UI:** `http://localhost:7070/swagger`를 통해 API를 직접 테스트할 수 있습니다.
+- **DB 탐색 및 분석:** 테이블 목록 조회, 키워드 검색, 상세 스키마 추출, 실행 계획(Explain) 조회를 지원합니다.
+- **Swagger UI:** `http://localhost:7070/swagger`를 통해 모든 API를 시각적으로 테스트할 수 있습니다.
+
+---
+
+## 🧠 VectorDB & RAG (지능형 테이블 검색)
+
+이 서버는 **LangChain4j**를 사용하여 데이터베이스 스키마에 대한 지식 베이스를 구축합니다.
+
+### 작동 원리
+1. **스키마 추출:** DB에서 테이블 구조를 추출하여 `docs/schema/tables/*.json` 파일로 저장합니다.
+2. **벡터화 (Embedding):** 저장된 JSON 정의서를 읽어 벡터 데이터베이스(In-memory)에 인덱싱합니다.
+3. **자연어 검색:** 사용자가 "사용자 권한과 관련된 테이블이 뭐야?"라고 물으면, 관련도가 높은 테이블 정의서를 검색하여 반환합니다.
+
+### 설정 (`application.yml`)
+임베딩 모델은 로컬(CPU), Ollama, OpenAI 중 선택할 수 있습니다.
+```yaml
+ai:
+  vector-store:
+    provider: local  # local (AllMiniLmL6V2), ollama, openai
+    providers:
+      ollama:
+        model: llama3
+        url: http://localhost:11434
+      openai:
+        api-key: ${OPENAI_API_KEY}
+```
 
 ---
 
@@ -20,12 +47,9 @@ Claude와 같은 AI 에이전트가 데이터베이스 스키마를 탐색하고
 ### 필수 요구사항
 - **Java 17** 이상
 - **Maven 3.8** 이상
-- 연동할 데이터베이스 (PostgreSQL, Oracle, MSSQL 등)
 
 ### 빌드 방법
 ```bash
-git clone <repository-url>
-cd sql-gen-mcp
 mvn clean package
 ```
 
@@ -33,123 +57,86 @@ mvn clean package
 
 ## ⚙️ 설정 (Configuration)
 
-실행 디렉토리에 `application.yml` 파일을 생성하거나 수정하여 서버 및 DB 정보를 설정합니다.
+`application.yml` 파일을 통해 서버 및 DB 정보를 설정합니다.
 
-### `application.yml` 예시
 ```yaml
 server:
-  port: 8081      # 일반 서버 관리 포트
-
-mcp:
-  port: 7070      # MCP 통신용 전용 포트 (외부 연결 시 사용)
+  port: 7070
 
 db:
   driver: org.postgresql.Driver
   url: jdbc:postgresql://localhost:5432/mydb
   user: myuser
   pw: mypassword
-  schema-output-dir: docs/schema  # 스키마 추출 시 저장될 경로
+  schema-output-dir: docs/schema
 ```
 
 ---
 
 ## 🏃 실행 방법
 
-### 1. Maven을 이용한 실행
-```bash
-# 기본 설정으로 실행 (yml 기반)
-mvn exec:java -Dexec.mainClass="com.sqlgen.mcp.McpServer"
-
-# 특정 포트로 즉시 오버라이드하여 실행
-mvn exec:java -Dexec.mainClass="com.sqlgen.mcp.McpServer" -Dexec.args="9090"
-```
-
-### 2. 빌드된 JAR로 실행
+### 1. 일반 실행 (SSE 방식)
 ```bash
 java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar
 ```
+
+### 2. Claude Desktop 전용 (STDIO 방식)
+```bash
+java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
+```
+
+---
+
+## 🔗 API 및 Swagger (Functions)
+
+서버 실행 후 `http://localhost:7070/swagger`에서 아래 기능들을 직접 호출해볼 수 있습니다.
+
+### 📋 테이블 및 스키마 관리
+| Method | Endpoint | 설명 |
+| :--- | :--- | :--- |
+| `GET` | `/tables` | 전체 테이블 목록 및 코멘트 조회 |
+| `GET` | `/tables/search` | 키워드(`?q=...`) 기반 테이블 명 검색 |
+| `GET` | `/tables/{name}/schema` | 특정 테이블의 컬럼, 타입, 제약조건 상세 조회 |
+| `POST` | `/db/initializeSchema` | 현재 DB의 모든 스키마를 추출하여 벡터 DB에 반영 |
+
+### 🔍 쿼리 실행 및 분석
+| Method | Endpoint | 설명 |
+| :--- | :--- | :--- |
+| `POST` | `/query/read` | SELECT 쿼리 실행 (Body: SQL string) |
+| `POST` | `/query/write` | INSERT/UPDATE/DELETE 실행 |
+| `POST` | `/query/explain` | SQL 실행 계획(Explain) 조회 및 성능 분석 |
+
+### 🤖 지능형 검색 (RAG)
+| Method | Endpoint | 설명 |
+| :--- | :--- | :--- |
+| `GET` | `/knowledge/search` | 자연어 질의(`?q=...`)로 연관된 테이블 정의서 검색 |
+
+---
+
+## 🧰 MCP 도구 (Tools for AI)
+
+AI 에이전트(Claude 등)가 내부적으로 사용하는 도구 목록입니다.
+
+- `get_table_list`: DB 구조 파악의 시작점.
+- `search_tables`: 특정 키워드가 포함된 테이블 탐색.
+- `get_table_schema`: 쿼리 작성을 위한 상세 컬럼 정보 획득.
+- `read_query`: 데이터 조회 및 분석.
+- `write_query`: 데이터 수정 (주의 필요).
+- `explain_query`: 복잡한 쿼리의 성능 최적화 가이드 제공.
+- `search_knowledge_base`: **(추천)** 방대한 스키마에서 목적에 맞는 테이블을 자연어로 검색.
 
 ---
 
 ## 🐳 Docker 사용법
 
-### 1. Docker 빌드
-```bash
-docker build -t sql-gen-mcp .
-```
-
-### 2. Docker 실행
-`application.yml`이 현재 디렉토리에 있는 경우:
-실행 예시1)
-```bash
-docker run -p 7070:7070 -p 8081:8081 -v ./application.yml:/app/application.yml sql-gen-mcp
-```
-실행 예시2)
-```bash
-docker run -d --name mcp-server -p 7070:7070 -e DB_URL="jdbc:postgresql://192.168.45.7:5433/dbmes" -e DB_USER="tester1" -e DB_PW="tester1" sql-gen-mcp
-```
-
-### 3. Docker Compose (DB 포함)
-제공된 `docker-compose.yml`을 사용하여 PostgreSQL과 함께 즉시 실행할 수 있습니다.
 ```bash
 docker-compose up -d
 ```
-- **MCP Server:** `http://localhost:7070`
 - **Swagger:** `http://localhost:7070/swagger`
-- **PostgreSQL:** `localhost:5432` (user/pw: tester1/tester1)
+- **PostgreSQL:** `localhost:5432`
 
 ---
 
-## 🔗 외부 서버 연결 가이드 (MCP 클라이언트 설정)
-
-### 1. Claude Desktop 연결 (SSE 방식)
-Claude Desktop에서 외부 서버에 실행 중인 이 프로젝트를 연동하려면 `claude_desktop_config.json`을 수정합니다.
-
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "sql-gen-remote": {
-      "url": "http://<외부_서버_IP>:7070/sse"
-    }
-  }
-}
-```
-
-### 2. 표준 HTTP RPC 연결 (Stateless)
-별도의 SSE 핸드셰이크 없이 단일 HTTP POST 요청으로 도구를 실행할 수 있습니다.
-
-- **Endpoint:** `POST http://<외부_서버_IP>:7070/mcp/rpc`
-- **Request Body (Example):**
-  ```json
-  {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "get_table_list",
-      "arguments": {}
-    }
-  }
-  ```
-
----
-
-## 🧰 제공되는 MCP 도구 (Tools)
-
-| 도구명 | 설명 | 파라미터 |
-| :--- | :--- | :--- |
-| `get_table_list` | 데이터베이스의 모든 테이블 목록을 반환합니다. | 없음 |
-| `search_tables` | 테이블 명이나 코멘트에서 키워드를 검색합니다. | `query` (string) |
-| `get_table_schema` | 특정 테이블의 컬럼명, 타입, 제약조건 등을 조회합니다. | `tableName` (string) |
-| `read_query` | SELECT 문을 실행하여 데이터를 조회합니다. | `sql` (string) |
-| `write_query` | INSERT/UPDATE/DELETE 등의 DML을 실행합니다. | `sql` (string) |
-
----
-
-## 🔒 보안 및 네트워크 참고사항
-- **포트 개방:** 외부 서버에서 실행 시 해당 포트(기본 7070)가 방화벽에서 인바운드 허용되어야 합니다.
-- **CORS:** 모든 호스트에 대해 CORS가 기본적으로 허용되어 있습니다.
-- **주의:** 현재 인증 로직이 포함되어 있지 않으므로, 공인 IP에 노출 시 방화벽에서 특정 IP만 허용하거나 VPN 환경에서 사용하는 것을 권장합니다.
+## 🔒 보안 주의사항
+- 본 서버는 기본적으로 CORS가 개방되어 있으며 별도의 인증 로직이 없습니다.
+- 외부 노출 시 방화벽 설정이나 리버스 프록시(Nginx 등)를 통한 인증 추가를 권장합니다.
