@@ -62,6 +62,7 @@ public class McpServer {
     public void launch(int portOverride) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(McpServer.class);
         com.sqlgen.mcp.controller.McpController mcpController = context.getBean(com.sqlgen.mcp.controller.McpController.class);
+        com.fasterxml.jackson.databind.ObjectMapper sharedObjectMapper = context.getBean(com.fasterxml.jackson.databind.ObjectMapper.class);
         
         com.fasterxml.jackson.databind.ObjectMapper yamlMapper = new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
         int port = 7070;
@@ -89,6 +90,7 @@ public class McpServer {
 
         final int finalPort = port;
         Javalin app = Javalin.create(config -> {
+            config.jsonMapper(new io.javalin.json.JavalinJackson(sharedObjectMapper, false));
             config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()));
             config.registerPlugin(new OpenApiPlugin(openApiConfig -> {
                 openApiConfig.withDocumentationPath("/openapi.json");
