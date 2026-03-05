@@ -155,14 +155,14 @@ public class VectorStoreService {
                 .collect(Collectors.toList());
 
         logger.info(">>> [RAG] Found {} relevant matches in Knowledge Base.", results.size());
-		for (String t : results) {
-			logger.debug(">>> [RAG] Match snippet: \n{}", t );
+		for (int i=0; i<results.size(); i++ ) {
+			logger.debug(">>> [RAG] {}. Match snippet: \n{}", i, results.get(i) );
 		}
         
-        if (!results.isEmpty()) {
-            logger.info(">>> [RAG] Top match summary: \n{}", 
-                results.get(0).split("\n")[0] + " (and more...)");
-        }
+//        if (!results.isEmpty()) {
+//            logger.info(">>> [RAG] Top match summary: \n{}", 
+//                results.get(0).split("\n")[0] + " (and more...)");
+//        }
         
         return results;
     }
