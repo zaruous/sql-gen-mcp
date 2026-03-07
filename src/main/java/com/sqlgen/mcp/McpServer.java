@@ -101,8 +101,13 @@ public class McpServer {
                     });
                 });
             }));
-            config.registerPlugin(new SwaggerPlugin(swaggerConfig -> {}));
+            config.registerPlugin(new SwaggerPlugin(swaggerConfig -> {
+                swaggerConfig.setDocumentationPath("/openapi.json");
+            }));
         }).start(finalPort);
+
+        // API Compatibility: Redirect /openapi to /openapi.json
+        app.get("/openapi", ctx -> ctx.redirect("/openapi.json"));
 
         app.get("/", mcpController::getIndex);
         app.sse("/sse", mcpController::connectSse);

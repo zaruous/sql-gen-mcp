@@ -1,0 +1,1 @@
+docker build -t callakrsos/sql-gen-mcp .
