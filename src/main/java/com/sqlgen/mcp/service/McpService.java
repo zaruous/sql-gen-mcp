@@ -5,6 +5,7 @@ import java.io.IOException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -16,7 +17,9 @@ public class McpService {
     private static final Logger logger = LoggerFactory.getLogger(McpService.class);
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper mapper = new ObjectMapper();
-    private String defaultOutputDir = "docs/schema";
+    
+    @Value("${db.schema-output-dir:docs/schema}")
+    private String defaultOutputDir;
 
     public McpService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;

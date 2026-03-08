@@ -5,8 +5,6 @@ services:
       - "8081:8081"
       - "7070:7070"
     volumes:
-      - ./application.yml:/app/application.yml
-      - ./logback.xml:/app/logback.xml
       - ./docs/schema:/app/docs/schema
     depends_on:
       db:

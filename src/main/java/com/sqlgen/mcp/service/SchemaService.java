@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
@@ -21,10 +22,14 @@ import java.util.Map;
 public class SchemaService {
     private static final Logger logger = LoggerFactory.getLogger(SchemaService.class);
     private final DataSource dataSource;
-    private String defaultOutputDir = "docs/schema";
+    private final VectorStoreService vectorStoreService;
+    
+    @Value("${db.schema-output-dir:docs/schema}")
+    private String defaultOutputDir;
 
-    public SchemaService(DataSource dataSource) {
+    public SchemaService(DataSource dataSource, VectorStoreService vectorStoreService) {
         this.dataSource = dataSource;
+        this.vectorStoreService = vectorStoreService;
     }
 
     public void setDefaultOutputDir(String defaultOutputDir) {
@@ -79,6 +84,7 @@ public class SchemaService {
                 tables.add(tableInfo);
             }
             save(tables, finalDir);
+            vectorStoreService.reload();
             return true;
         } catch (SQLException e) {
             logger.error("Extraction failed: {}", e.getMessage());

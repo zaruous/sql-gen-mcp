@@ -15,7 +15,8 @@ public class SchemaInitApplication {
     public static void main(String[] args) {
         logger.info("Starting Schema Initialization...");
 
-        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(DatabaseConfig.class)) {
+        McpServer mcpServer = new McpServer();
+        try (AnnotationConfigApplicationContext context = mcpServer.createSpringContext()) {
             SchemaService schemaService = context.getBean(SchemaService.class);
             
             // 기본 출력 디렉토리(docs/schema) 또는 실행 인자에서 받은 경로로 추출 실행

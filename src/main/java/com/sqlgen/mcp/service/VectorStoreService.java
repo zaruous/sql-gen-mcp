@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +34,9 @@ public class VectorStoreService {
     private EmbeddingStore<TextSegment> embeddingStore;
     private EmbeddingModel embeddingModel;
 
+    @Value("${db.schema-output-dir:docs/schema}")
+    private String schemaPath;
+
     public VectorStoreService(ObjectMapper objectMapper, Environment env) {
         this.objectMapper = objectMapper;
         this.env = env;
@@ -49,6 +53,16 @@ public class VectorStoreService {
             loadAndIndexDocs();
         } catch (Exception e) {
             logger.error("Failed to initialize VectorStore: {}", e.getMessage(), e);
+        }
+    }
+
+    public void reload() {
+        logger.info("Reloading and re-indexing knowledge base from {}...", schemaPath);
+        try {
+            this.embeddingStore = new InMemoryEmbeddingStore<>(); // Clear existing
+            loadAndIndexDocs();
+        } catch (Exception e) {
+            logger.error("Failed to reload VectorStore: {}", e.getMessage(), e);
         }
     }
 
@@ -79,20 +93,19 @@ public class VectorStoreService {
     }
 
     private void loadAndIndexDocs() throws Exception {
-        // 여러 경로에서 merged_tables.json 찾기 시도
-//        File file = new File("docs/schema/merged_tables.json");
-        
-    	File dir = new File("docs/schema/tables");
+    	File dir = new File(schemaPath, "tables");
     	if (!dir.exists()) {
-    		dir = new File("../docs/schema/tables");
+    		dir = new File("../" + schemaPath + "/tables");
         }
         
         if (!dir.exists()) {
-            logger.warn("Knowledge file not found at {}. Skipping indexing.", dir.getAbsolutePath());
+            logger.warn("Knowledge directory not found at {}. Skipping indexing.", dir.getAbsolutePath());
             return;
         }
         
 		File[] listFiles = dir.listFiles((d, name) -> name.endsWith(".json"));
+        if (listFiles == null) return;
+
 		for(File file : listFiles) {
 			logger.info("Indexing tables from {}...", file.getAbsolutePath());
 	        JsonNode root = objectMapper.readTree(file);

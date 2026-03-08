@@ -12,6 +12,10 @@ import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 
+import java.util.Map;
+import java.util.Iterator;
+import java.util.Properties;
+
 @Configuration
 @ComponentScan(basePackages = "com.sqlgen.mcp")
 public class McpServer {
@@ -44,8 +48,56 @@ public class McpServer {
         }
     }
 
+    public AnnotationConfigApplicationContext createSpringContext() {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        
+        // Load application.yml into Spring Environment
+        try {
+            java.io.File externalConfig = new java.io.File("application.yml");
+            java.util.Properties props = new java.util.Properties();
+            
+            com.fasterxml.jackson.databind.ObjectMapper yamlMapper = new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
+            
+            try (java.io.InputStream is = externalConfig.exists() 
+                    ? new java.io.FileInputStream(externalConfig) 
+                    : McpServer.class.getClassLoader().getResourceAsStream("application.yml")) {
+                
+                if (is != null) {
+                    com.fasterxml.jackson.databind.JsonNode root = yamlMapper.readTree(is);
+                    addFlattenedProperties(props, "", root);
+                }
+            }
+            
+            org.springframework.core.env.PropertiesPropertySource source = new org.springframework.core.env.PropertiesPropertySource("appConfig", props);
+            context.getEnvironment().getPropertySources().addFirst(source);
+            
+        } catch (Exception e) {
+            logger.warn("Failed to load application.yml into Spring Environment: {}", e.getMessage());
+        }
+
+        context.register(McpServer.class);
+        context.refresh();
+        return context;
+    }
+
+    private void addFlattenedProperties(java.util.Properties props, String prefix, com.fasterxml.jackson.databind.JsonNode node) {
+        if (node.isObject()) {
+            java.util.Iterator<Map.Entry<String, com.fasterxml.jackson.databind.JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, com.fasterxml.jackson.databind.JsonNode> entry = fields.next();
+                addFlattenedProperties(props, prefix.isEmpty() ? entry.getKey() : prefix + "." + entry.getKey(), entry.getValue());
+            }
+        } else if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                addFlattenedProperties(props, prefix + "[" + i + "]", node.get(i));
+            }
+        } else {
+            props.put(prefix, node.asText());
+        }
+    }
+
     public void launchStdio() {
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(McpServer.class);
+        AnnotationConfigApplicationContext context = createSpringContext();
         com.sqlgen.mcp.handler.McpHandler mcpHandler = context.getBean(com.sqlgen.mcp.handler.McpHandler.class);
         
         // Stdio 트랜스포트 프로바이더로 서버 시작
@@ -55,34 +107,18 @@ public class McpServer {
         mcpHandler.createServer(transportProvider);
         
         logger.info("SQL MCP Server started in STDIO mode.");
-        // Stdio 서버는 SDK 내부에서 Reactor를 통해 입력을 감시하므로 별도의 루프가 필요할 수 있습니다.
-        // 하지만 StdioMcpSessionTransport가 데몬 스레드가 아니라면 JVM은 유지됩니다.
     }
 
     public void launch(int portOverride) {
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(McpServer.class);
+        AnnotationConfigApplicationContext context = createSpringContext();
         com.sqlgen.mcp.controller.McpController mcpController = context.getBean(com.sqlgen.mcp.controller.McpController.class);
         com.fasterxml.jackson.databind.ObjectMapper sharedObjectMapper = context.getBean(com.fasterxml.jackson.databind.ObjectMapper.class);
         
-        com.fasterxml.jackson.databind.ObjectMapper yamlMapper = new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
         int port = 7070;
-        
-        java.io.File externalConfig = new java.io.File("application.yml");
-        try (java.io.InputStream is = externalConfig.exists() 
-                ? new java.io.FileInputStream(externalConfig) 
-                : McpServer.class.getClassLoader().getResourceAsStream("application.yml")) {
-            
-            if (is != null) {
-                com.fasterxml.jackson.databind.JsonNode root = yamlMapper.readTree(is);
-                if (root.has("mcp") && root.path("mcp").has("port")) {
-                    port = root.path("mcp").path("port").asInt(7070);
-                } else {
-                    port = root.path("server").path("port").asInt(7070);
-                }
-            }
-        } catch (Exception e) {
-            logger.warn("Failed to read application.yml, using default port 7070");
-        }
+        try {
+            port = Integer.parseInt(context.getEnvironment().getProperty("mcp.port", 
+                   context.getEnvironment().getProperty("server.port", "7070")));
+        } catch (Exception ignored) {}
 
         if (portOverride > 0) {
             port = portOverride;
