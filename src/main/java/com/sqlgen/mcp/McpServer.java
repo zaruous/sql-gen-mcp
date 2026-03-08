@@ -155,7 +155,7 @@ public class McpServer {
         app.get("/tables/search", mcpController::searchTables);
         app.get("/tables/{name}/schema", mcpController::getTableSchema);
         app.post("/query/read", mcpController::readQuery);
-        app.post("/query/write", mcpController::writeQuery);
+//        app.post("/query/write", mcpController::writeQuery);
         app.post("/query/explain", mcpController::explainQuery);
         app.get("/knowledge/search", mcpController::searchKnowledge);
         app.post("/schema/extract", mcpController::extractSchema);

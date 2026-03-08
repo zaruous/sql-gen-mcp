@@ -321,6 +321,7 @@ public class McpController {
         ctx.contentType("application/json").result(mcpService.executeReadQuery(ctx.body()));
     }
 
+    @OpenApiIgnore
     @OpenApi(path = "/query/write", methods = HttpMethod.POST, summary = "Write query",
         requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = String.class), description = "INSERT/UPDATE/DELETE SQL statement", required = true))
     public void writeQuery(Context ctx) throws Exception {
