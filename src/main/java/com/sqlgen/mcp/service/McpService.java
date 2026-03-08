@@ -2,6 +2,12 @@ package com.sqlgen.mcp.service;
 
 import java.io.File;
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +23,7 @@ public class McpService {
     private static final Logger logger = LoggerFactory.getLogger(McpService.class);
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper mapper = new ObjectMapper();
+    private String dbType = null;
     
     @Value("${db.schema-output-dir:docs/schema}")
     private String defaultOutputDir;
@@ -29,17 +36,69 @@ public class McpService {
         this.defaultOutputDir = dir;
     }
 
+    private synchronized String getDbType() {
+        if (dbType != null) return dbType;
+        try (Connection conn = jdbcTemplate.getDataSource().getConnection()) {
+            String driverName = conn.getMetaData().getDriverName().toLowerCase();
+            if (driverName.contains("oracle")) dbType = "ORACLE";
+            else if (driverName.contains("sql server") || driverName.contains("microsoft")) dbType = "MSSQL";
+            else if (driverName.contains("postgresql")) dbType = "POSTGRES";
+            else dbType = "UNKNOWN";
+            logger.info("Detected Database Type: {}", dbType);
+        } catch (SQLException e) {
+            logger.error("Failed to detect database type", e);
+            return "UNKNOWN";
+        }
+        return dbType;
+    }
+
+    private String loadSql(String path) {
+        try (var is = getClass().getClassLoader().getResourceAsStream("sql/schema/" + path)) {
+            if (is == null) {
+                logger.warn("SQL file not found: {}", path);
+                return "";
+            }
+            return new String(is.readAllBytes());
+        } catch (IOException e) {
+            logger.error("Failed to load SQL file: {}", path, e);
+            return "";
+        }
+    }
+
     public String getTableList() throws JsonProcessingException {
-        // 대규모 데이터 부하 방지: 상위 100개 및 필수 컬럼만 조회
-        String sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' LIMIT 100";
+        String type = getDbType();
+        String fileName = switch (type) {
+            case "ORACLE" -> "oracle_tables_list.sql";
+            case "POSTGRES" -> "postgres_tables_list.sql";
+            case "MSSQL" -> "mssql_tables_list.sql";
+            default -> "";
+        };
+
+        if (fileName.isEmpty()) {
+            return "[]";
+        }
+
+        String sql = loadSql(fileName);
         return mapper.writeValueAsString(jdbcTemplate.queryForList(sql));
     }
 
     public String searchTables(String query) throws JsonProcessingException {
         if (query == null || query.isEmpty()) return "[]";
-        // 검색 결과도 50개로 제한
-        String sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE ? LIMIT 50";
-        return mapper.writeValueAsString(jdbcTemplate.queryForList(sql, "%" + query.toLowerCase() + "%"));
+        
+        String type = getDbType();
+        String fileName = switch (type) {
+            case "ORACLE" -> "oracle_tables_search.sql";
+            case "POSTGRES" -> "postgres_tables_search.sql";
+            case "MSSQL" -> "mssql_tables_search.sql";
+            default -> "";
+        };
+
+        if (fileName.isEmpty()) {
+            return "[]";
+        }
+
+        String sql = loadSql(fileName);
+        return mapper.writeValueAsString(jdbcTemplate.queryForList(sql, "%" + query + "%"));
     }
 
     public String getTableSchema(String tableName) throws IOException {
@@ -49,18 +108,44 @@ public class McpService {
         }
         
         // Fallback to DB
-        String sql = "SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = ?";
-        return mapper.writeValueAsString(jdbcTemplate.queryForList(sql, tableName));
+        String type = getDbType();
+        String fileName = switch (type) {
+            case "ORACLE" -> "oracle_columns.sql";
+            case "POSTGRES" -> "postgres_columns.sql";
+            case "MSSQL" -> "mssql_columns.sql";
+            default -> "";
+        };
+
+        if (fileName.isEmpty()) {
+            return "[]";
+        }
+
+        String sql = loadSql(fileName);
+        // columns.sql usually expect uppercase for oracle
+        String param = type.equals("ORACLE") ? tableName.toUpperCase() : tableName;
+        return mapper.writeValueAsString(jdbcTemplate.queryForList(sql, param));
     }
 
     public String executeReadQuery(String sql) throws JsonProcessingException {
-        // Safety: Limit rows
-        if (!sql.toLowerCase().contains("limit")) {
-            sql = sql.trim();
-            if (sql.endsWith(";")) sql = sql.substring(0, sql.length() - 1);
-            sql += " LIMIT 100";
+        String type = getDbType();
+        sql = sql.trim();
+        if (sql.endsWith(";")) sql = sql.substring(0, sql.length() - 1);
+
+        String limitedSql = sql;
+        boolean alreadyLimited = sql.toLowerCase().contains("limit") 
+                || sql.toLowerCase().contains("rownum") 
+                || sql.toLowerCase().contains("top ");
+
+        if (!alreadyLimited) {
+            limitedSql = switch (type) {
+                case "POSTGRES" -> sql + " LIMIT 100";
+                case "ORACLE" -> "SELECT * FROM (" + sql + ") WHERE ROWNUM <= 100";
+                case "MSSQL" -> "SELECT TOP 100 * FROM (" + sql + ") AS sub";
+                default -> sql;
+            };
         }
-        return mapper.writeValueAsString(jdbcTemplate.queryForList(sql));
+        
+        return mapper.writeValueAsString(jdbcTemplate.queryForList(limitedSql));
     }
 
     public String executeWriteQuery(String sql) {
@@ -69,24 +154,28 @@ public class McpService {
     }
 
     public String explainQuery(String sql) throws JsonProcessingException {
-        String driver = "";
-        try (java.sql.Connection conn = jdbcTemplate.getDataSource().getConnection()) {
-            driver = conn.getMetaData().getURL();
-        } catch (Exception ignored) {}
+        String type = getDbType();
         
         String explainSql;
-        if (driver.contains("postgresql")) {
+        if (type.equals("POSTGRES")) {
             explainSql = "EXPLAIN (FORMAT JSON) " + sql;
-        } else if (driver.contains("oracle")) {
+        } else if (type.equals("ORACLE")) {
             explainSql = "EXPLAIN PLAN FOR " + sql;
+        } else if (type.equals("MSSQL")) {
+            explainSql = "SET SHOWPLAN_TEXT ON; " + sql; 
+            // MSSQL might need different handling for SET commands in JdbcTemplate
         } else {
             explainSql = "EXPLAIN " + sql;
         }
 
         try {
-            if (driver.contains("oracle")) {
+            if (type.equals("ORACLE")) {
                 jdbcTemplate.execute(explainSql);
                 return mapper.writeValueAsString(jdbcTemplate.queryForList("SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY)"));
+            }
+            if (type.equals("MSSQL")) {
+                // Simplified for now, MSSQL explain can be complex via JDBC
+                return "{\"info\":\"Explain for MSSQL not fully implemented via REST API yet.\"}";
             }
             return mapper.writeValueAsString(jdbcTemplate.queryForList(explainSql));
         } catch (Exception e) {
