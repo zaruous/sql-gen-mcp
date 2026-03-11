@@ -1,20 +1,20 @@
 package com.sqlgen.mcp;
 
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 
+import com.sqlgen.mcp.service.SchemaInitService;
+
 import io.javalin.Javalin;
 import io.javalin.openapi.plugin.OpenApiPlugin;
 import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
-
-import java.util.Map;
-import java.util.Iterator;
-import java.util.Properties;
 
 @Configuration
 @ComponentScan(basePackages = "com.sqlgen.mcp")
@@ -95,16 +95,32 @@ public class McpServer {
             props.put(prefix, node.asText());
         }
     }
-
+//    public void initData() throws FileNotFoundException, IOException {
+//    	
+//    	Properties p = new Properties();
+//    	try(FileInputStream inStream = new FileInputStream("db.properties")){
+//    		p.load(inStream);
+//    	}
+//    	
+//		
+//    }
+    
     public void launchStdio() {
         AnnotationConfigApplicationContext context = createSpringContext();
         com.sqlgen.mcp.handler.McpHandler mcpHandler = context.getBean(com.sqlgen.mcp.handler.McpHandler.class);
+        
+        
+        SchemaInitService bean = context.getBean(SchemaInitService.class);
+        bean.initializeSchema(null);
+        logger.info("Schema initialized.");
         
         // Stdio 트랜스포트 프로바이더로 서버 시작
         StdioServerTransportProvider transportProvider = 
             new StdioServerTransportProvider(McpJsonDefaults.getMapper());
         
         mcpHandler.createServer(transportProvider);
+        
+        
         
         logger.info("SQL MCP Server started in STDIO mode.");
     }
