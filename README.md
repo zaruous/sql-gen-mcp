@@ -137,6 +137,32 @@ docker-compose up -d
 
 ---
 
+
+``` stdio 모드 샘플 및 초기 데이터 처리
+ java -jar .\sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio `
+>>   --db.driver=org.postgresql.Driver `
+>>   --db.url=jdbc:postgresql://localhost:5433/mesdb `
+>>   --db.user=tester1 `
+>>   --db.pw=tester1
+```
+
+
+``` mcp 설정 예시
+ "mcpServers": {
+    "sql-gen-mcp": {
+      "type": "stdio",
+      "command": "java",
+      "args": [
+        "-jar",
+        "위치\\sql-gen-mcp-1.0.0-SNAPSHOT.jar",
+        "--stdio"
+      ]
+    }
+  },
+```
+
+
+
 ## 🔒 보안 주의사항
 - 본 서버는 기본적으로 CORS가 개방되어 있으며 별도의 인증 로직이 없습니다.
 - 외부 노출 시 방화벽 설정이나 리버스 프록시(Nginx 등)를 통한 인증 추가를 권장합니다.
