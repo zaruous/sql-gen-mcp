@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
 import javax.sql.DataSource;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -55,8 +57,25 @@ public class SchemaService {
     }
 
     public boolean extractAndSave(String outputDir) {
-        String finalDir = (outputDir == null || outputDir.isEmpty()) ? defaultOutputDir : outputDir;
-        try (Connection conn = dataSource.getConnection()) {
+        return doExtractAndSave(dataSource, defaultOutputDir);
+    }
+
+    public boolean extractAndSave(String driver, String url, String user, String pw) {
+        DataSource ds = createDataSource(driver, url, user, pw);
+        return doExtractAndSave(ds, defaultOutputDir);
+    }
+
+    private DataSource createDataSource(String driver, String url, String user, String pw) {
+        DriverManagerDataSource ds = new DriverManagerDataSource();
+        ds.setDriverClassName(driver);
+        ds.setUrl(url);
+        ds.setUsername(user);
+        ds.setPassword(pw);
+        return ds;
+    }
+
+    private boolean doExtractAndSave(DataSource ds, String outputDir) {
+        try (Connection conn = ds.getConnection()) {
             String dbType = getDbType(conn);
             List<TableInfo> tables = new ArrayList<>();
             List<Map<String, String>> tableMaps = fetchTables(conn, dbType);
@@ -83,7 +102,7 @@ public class SchemaService {
                 }
                 tables.add(tableInfo);
             }
-            save(tables, finalDir);
+            save(tables, outputDir);
             vectorStoreService.reload();
             return true;
         } catch (SQLException e) {

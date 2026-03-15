@@ -165,6 +165,8 @@ public class McpServer {
         app.sse("/sse", mcpController::connectSse);
         app.post("/messages", mcpController::handleMessages);
         app.post("/messages/{sessionId}", mcpController::handleMessages);
+        // Streamable HTTP transport (MCP 2025-03-26)
+        app.post("/mcp", mcpController::handleStreamable);
         
         // Table & Query APIs
         app.get("/tables", mcpController::getTableList);

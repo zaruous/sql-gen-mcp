@@ -282,6 +282,86 @@ public class McpController {
         }
     }
 
+    // ── Streamable HTTP Transport (MCP 2025-03-26) ───────────────────────────────
+    @OpenApi(path = "/mcp", methods = HttpMethod.POST, summary = "MCP Streamable HTTP endpoint")
+    public void handleStreamable(Context ctx) {
+        String body = ctx.body();
+        try {
+            Map<String, Object> rawMap = objectMapper.readValue(body, Map.class);
+            String method = (String) rawMap.get("method");
+            Object id = rawMap.get("id");
+            String idJson = objectMapper.writeValueAsString(id);
+
+            logger.info("Streamable MCP request: method={}", method);
+
+            if ("initialize".equals(method)) {
+                String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"result\":{"
+                        + "\"protocolVersion\":\"2025-03-26\","
+                        + "\"capabilities\":{\"tools\":{\"listChanged\":true}},"
+                        + "\"serverInfo\":{\"name\":\"sql-gen-mcp\",\"version\":\"1.1.0\"}}}";
+                ctx.contentType("application/json").status(200).result(resp);
+                return;
+            }
+
+            if ("notifications/initialized".equals(method)) {
+                ctx.status(202).result("");
+                return;
+            }
+
+            if ("tools/list".equals(method)) {
+                String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"result\":{\"tools\":["
+                        + "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
+                        + "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}},"
+                        + "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}},"
+                        + "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
+                        + "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
+                        + "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
+                        + "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}"
+                        + "]}}";
+                ctx.contentType("application/json").status(200).result(resp);
+                return;
+            }
+
+            if ("tools/call".equals(method)) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> params = (Map<String, Object>) rawMap.get("params");
+                String toolName = params != null ? (String) params.get("name") : null;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> args = params != null ? (Map<String, Object>) params.get("arguments") : Map.of();
+                if (args == null) args = Map.of();
+
+                String toolResult;
+                try {
+                    toolResult = switch (toolName != null ? toolName : "") {
+                        case "get_table_list"       -> mcpService.getTableList();
+                        case "search_tables"        -> mcpService.searchTables((String) args.get("query"));
+                        case "get_table_schema"     -> mcpService.getTableSchema((String) args.get("tableName"));
+                        case "read_query"           -> mcpService.executeReadQuery((String) args.get("sql"));
+                        case "write_query"          -> mcpService.executeWriteQuery((String) args.get("sql"));
+                        case "explain_query"        -> mcpService.explainQuery((String) args.get("sql"));
+                        case "search_knowledge_base"-> String.join("\n---\n", vectorStoreService.search((String) args.get("query"), 5));
+                        default                     -> "Unknown tool: " + toolName;
+                    };
+                } catch (Exception e) {
+                    toolResult = "Error: " + e.getMessage();
+                }
+
+                String escapedResult = objectMapper.writeValueAsString(toolResult);
+                String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + idJson
+                        + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":" + escapedResult + "}],\"isError\":false}}";
+                ctx.contentType("application/json").status(200).result(resp);
+                return;
+            }
+
+            ctx.contentType("application/json").status(200).result(
+                    "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"error\":{\"code\":-32601,\"message\":\"Method not found: " + method + "\"}}");
+
+        } catch (Exception e) {
+            logger.error("Streamable MCP error: {}", e.getMessage());
+            ctx.status(500).result("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error: " + e.getMessage() + "\"}}");
+        }
+    }
+
     private String extractId(String body) {
         int idIdx = body.indexOf("\"id\":");
         if (idIdx > 0) {
