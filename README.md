@@ -1,168 +1,273 @@
-# SQL MCP Server (Java & Javalin)
+# SQL MCP Server (Java / Javalin)
 
-이 프로젝트는 **Model Context Protocol (MCP)**을 구현한 SQL 데이터베이스 인터페이스 서버입니다. 
-Claude와 같은 AI 에이전트가 데이터베이스 스키마를 탐색하고, 안전하게 쿼리를 실행하며, 테이블 구조를 분석할 수 있도록 돕습니다.
+**Model Context Protocol (MCP)** 기반의 SQL 데이터베이스 인터페이스 서버입니다.
+eXbuilder6 AI Studio 등 MCP 클라이언트가 데이터베이스 스키마를 탐색하고, 쿼리를 실행하며, 테이블 구조를 분석할 수 있도록 돕습니다.
 
-특히, **VectorDB(RAG)** 기능을 통해 수천 개의 테이블 중 사용자의 질문에 가장 적합한 테이블을 자연어로 찾아내는 지능형 검색 기능을 제공합니다.
-
----
-
-## 🚀 주요 기능
-- **MCP 표준 지원 (SSE & STDIO):** Claude Desktop 및 다양한 MCP 클라이언트와 완벽하게 호환됩니다.
-- **VectorDB 기반 RAG (Knowledge Base):** 테이블 정의서(JSON)를 벡터화하여 자연어 질의에 최적화된 테이블을 추천합니다.
-- **Stateless HTTP RPC:** 상태 비유지 방식의 표준 HTTP 호출을 통해 도구를 실행할 수 있습니다.
-- **멀티 DBMS 지원:** PostgreSQL, Oracle, MSSQL 등 다양한 데이터베이스와 연동 가능합니다.
-- **DB 탐색 및 분석:** 테이블 목록 조회, 키워드 검색, 상세 스키마 추출, 실행 계획(Explain) 조회를 지원합니다.
-- **Swagger UI:** `http://localhost:7070/swagger`를 통해 모든 API를 시각적으로 테스트할 수 있습니다.
+**VectorDB(RAG)** 기능을 통해 수천 개의 테이블 중 자연어 질의에 가장 적합한 테이블을 찾아주는 지능형 검색을 제공합니다.
 
 ---
 
-## 🧠 VectorDB & RAG (지능형 테이블 검색)
+## 주요 기능
 
-이 서버는 **LangChain4j**를 사용하여 데이터베이스 스키마에 대한 지식 베이스를 구축합니다.
+| 기능 | 설명 |
+|---|---|
+| **Streamable HTTP Transport** | MCP 2025-03-26 신규 프로토콜. `POST /mcp` 단일 엔드포인트로 동기 응답 |
+| **SSE Transport** | MCP 2024-11-05 구 프로토콜. `GET /sse` + `POST /messages` |
+| **STDIO Transport** | Claude Desktop 등 로컬 MCP 클라이언트 연동 |
+| **VectorDB RAG** | 테이블 정의서 JSON을 임베딩하여 자연어로 최적 테이블 추천 |
+| **멀티 DBMS** | PostgreSQL · Oracle · MSSQL 지원 |
+| **Swagger UI** | `http://localhost:7070/swagger` |
 
-### 작동 원리
-1. **스키마 추출:** DB에서 테이블 구조를 추출하여 `docs/schema/tables/*.json` 파일로 저장합니다.
-2. **벡터화 (Embedding):** 저장된 JSON 정의서를 읽어 벡터 데이터베이스(In-memory)에 인덱싱합니다.
-3. **자연어 검색:** 사용자가 "사용자 권한과 관련된 테이블이 뭐야?"라고 물으면, 관련도가 높은 테이블 정의서를 검색하여 반환합니다.
+---
 
-### 설정 (`application.yml`)
-임베딩 모델은 로컬(CPU), Ollama, OpenAI 중 선택할 수 있습니다.
+## MCP 트랜스포트 방식 선택
+
+### Streamable HTTP (권장 — MCP 2025-03-26)
+
+LangChain4j 1.x 이상(`StreamableHttpMcpTransport`)과 호환되는 최신 방식입니다.
+
+```
+POST http://localhost:7070/mcp
+```
+
+**LangChain4j 클라이언트 설정 예시 (Java)**
+```java
+StreamableHttpMcpTransport transport = StreamableHttpMcpTransport.builder()
+        .url("http://localhost:7070/mcp")
+        .logRequests(true)
+        .logResponses(true)
+        .build();
+```
+
+**application.yml 연동 예시 (exbuilder6-ai-server)**
 ```yaml
 ai:
-  vector-store:
-    provider: local  # local (AllMiniLmL6V2), ollama, openai
-    providers:
-      ollama:
-        model: llama3
-        url: http://localhost:11434
-      openai:
-        api-key: ${OPENAI_API_KEY}
+  mcp:
+    servers:
+      - name: "dbhelper"
+        url: "http://localhost:7070/mcp"
 ```
 
 ---
 
-## 🛠️ 설치 및 빌드
+### SSE (구 방식 — MCP 2024-11-05)
 
-### 필수 요구사항
-- **Java 17** 이상
-- **Maven 3.8** 이상
-
-### 빌드 방법
-```bash
-mvn clean package
+```
+GET  http://localhost:7070/sse          ← 연결
+POST http://localhost:7070/messages     ← 메시지 전송 (?sessionId=xxx)
 ```
 
 ---
 
-## ⚙️ 설정 (Configuration)
-
-`application.yml` 파일을 통해 서버 및 DB 정보를 설정합니다.
-
-```yaml
-server:
-  port: 7070
-
-db:
-  driver: org.postgresql.Driver
-  url: jdbc:postgresql://localhost:5432/mydb
-  user: myuser
-  pw: mypassword
-  schema-output-dir: docs/schema
-```
-
----
-
-## 🏃 실행 방법
-
-### 1. 일반 실행 (SSE 방식)
-```bash
-java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar
-```
-
-### 2. Claude Desktop 전용 (STDIO 방식)
-```bash
-java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
-```
-
----
-
-## 🔗 API 및 Swagger (Functions)
-
-서버 실행 후 `http://localhost:7070/swagger`에서 아래 기능들을 직접 호출해볼 수 있습니다.
-
-### 📋 테이블 및 스키마 관리
-| Method | Endpoint | 설명 |
-| :--- | :--- | :--- |
-| `GET` | `/tables` | 전체 테이블 목록 및 코멘트 조회 |
-| `GET` | `/tables/search` | 키워드(`?q=...`) 기반 테이블 명 검색 |
-| `GET` | `/tables/{name}/schema` | 특정 테이블의 컬럼, 타입, 제약조건 상세 조회 |
-| `POST` | `/db/initializeSchema` | 현재 DB의 모든 스키마를 추출하여 벡터 DB에 반영 |
-
-### 🔍 쿼리 실행 및 분석
-| Method | Endpoint | 설명 |
-| :--- | :--- | :--- |
-| `POST` | `/query/read` | SELECT 쿼리 실행 (Body: SQL string) |
-| `POST` | `/query/write` | INSERT/UPDATE/DELETE 실행 |
-| `POST` | `/query/explain` | SQL 실행 계획(Explain) 조회 및 성능 분석 |
-
-### 🤖 지능형 검색 (RAG)
-| Method | Endpoint | 설명 |
-| :--- | :--- | :--- |
-| `GET` | `/knowledge/search` | 자연어 질의(`?q=...`)로 연관된 테이블 정의서 검색 |
-
----
-
-## 🧰 MCP 도구 (Tools for AI)
-
-AI 에이전트(Claude 등)가 내부적으로 사용하는 도구 목록입니다.
-
-- `get_table_list`: DB 구조 파악의 시작점.
-- `search_tables`: 특정 키워드가 포함된 테이블 탐색.
-- `get_table_schema`: 쿼리 작성을 위한 상세 컬럼 정보 획득.
-- `read_query`: 데이터 조회 및 분석.
-- `write_query`: 데이터 수정 (주의 필요).
-- `explain_query`: 복잡한 쿼리의 성능 최적화 가이드 제공.
-- `search_knowledge_base`: **(추천)** 방대한 스키마에서 목적에 맞는 테이블을 자연어로 검색.
-
----
-
-## 🐳 Docker 사용법
+### STDIO (Claude Desktop 연동)
 
 ```bash
-docker-compose up -d
-```
-- **Swagger:** `http://localhost:7070/swagger`
-- **PostgreSQL:** `localhost:5432`
-
----
-
-
-``` stdio 모드 샘플 및 초기 데이터 처리
- java -jar .\sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio `
->>   --db.driver=org.postgresql.Driver `
->>   --db.url=jdbc:postgresql://localhost:5433/mesdb `
->>   --db.user=tester1 `
->>   --db.pw=tester1
+java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
 ```
 
+**Claude Desktop `claude_desktop_config.json` 설정 예시**
 
-``` mcp 설정 예시
- "mcpServers": {
+```json
+{
+  "mcpServers": {
     "sql-gen-mcp": {
       "type": "stdio",
       "command": "java",
       "args": [
         "-jar",
-        "위치\\sql-gen-mcp-1.0.0-SNAPSHOT.jar",
+        "C:/path/to/sql-gen-mcp-1.0.0-SNAPSHOT.jar",
         "--stdio"
       ]
     }
-  },
+  }
+}
 ```
 
+---
 
+## MCP 도구 목록 (AI Tools)
 
-## 🔒 보안 주의사항
-- 본 서버는 기본적으로 CORS가 개방되어 있으며 별도의 인증 로직이 없습니다.
-- 외부 노출 시 방화벽 설정이나 리버스 프록시(Nginx 등)를 통한 인증 추가를 권장합니다.
+| 도구명 | 설명 | 입력 파라미터 |
+|---|---|---|
+| `search_knowledge_base` | **(최우선 권장)** 자연어로 테이블 정의서·스키마 지식 베이스 검색 | `query: string` |
+| `search_tables` | 키워드로 테이블명 검색 | `query: string` |
+| `get_table_schema` | 특정 테이블의 컬럼·타입·제약조건 상세 조회 | `tableName: string` |
+| `read_query` | SELECT SQL 실행 및 결과 반환 | `sql: string` |
+| `write_query` | INSERT / UPDATE / DELETE SQL 실행 | `sql: string` |
+| `explain_query` | SQL 실행 계획(Execution Plan) 분석 | `sql: string` |
+| `get_table_list` | DB 전체 테이블 목록 조회 (테이블 수가 많을 경우 비권장) | 없음 |
+
+> AI가 SQL을 생성할 때 권장 순서: `search_knowledge_base` → `search_tables` → `get_table_schema` → `read_query`
+
+---
+
+## REST API (Swagger)
+
+`http://localhost:7070/swagger` 에서 직접 테스트 가능합니다.
+
+### 테이블 & 스키마
+
+| Method | Endpoint | 설명 |
+|---|---|---|
+| `GET` | `/tables` | 전체 테이블 목록 및 코멘트 조회 |
+| `GET` | `/tables/search?q=키워드` | 키워드 기반 테이블명 검색 |
+| `GET` | `/tables/{name}/schema` | 특정 테이블 컬럼·제약조건 상세 |
+
+### 쿼리 실행
+
+| Method | Endpoint | 설명 |
+|---|---|---|
+| `POST` | `/query/read` | SELECT 쿼리 실행 (Body: SQL 문자열) |
+| `POST` | `/query/explain` | SQL 실행 계획 조회 |
+
+### 지식 베이스 (RAG)
+
+| Method | Endpoint | 설명 |
+|---|---|---|
+| `GET` | `/knowledge/search?q=질문` | 자연어로 연관 테이블 정의서 검색 |
+| `POST` | `/schema/extract` | DB 스키마 추출 → JSON 파일 저장 |
+| `POST` | `/db/initializeSchema` | 스키마 추출 + 벡터 DB 인덱싱 |
+
+### MCP (직접 호출)
+
+| Method | Endpoint | 설명 |
+|---|---|---|
+| `POST` | `/mcp` | Streamable HTTP MCP 엔드포인트 |
+| `GET` | `/sse` | SSE 방식 MCP 연결 |
+| `POST` | `/messages` | SSE 방식 MCP 메시지 전송 |
+
+---
+
+## 설정 (application.yml)
+
+```yaml
+server:
+  port: 8081       # REST API (내부용)
+
+mcp:
+  port: 7070       # MCP 서버 포트 (외부 클라이언트 연결)
+
+# VectorDB & RAG 임베딩 설정
+ai:
+  vector-store:
+    provider: local   # local | ollama | vllm | gemini
+
+    providers:
+      ollama:
+        base-url: "http://localhost:11434"
+        model-name: "nomic-embed-text"
+      vllm:
+        base-url: "http://localhost:8000/v1"
+        model-name: "your-vllm-model"
+        api-key: "optional"
+      gemini:
+        api-key: "your-gemini-api-key"
+        model-name: "text-embedding-004"
+
+# 데이터베이스 연결
+db:
+  driver: org.postgresql.Driver
+  url: jdbc:postgresql://localhost:5432/mydb
+  user: myuser
+  pw: mypassword
+  schema-output-dir: docs/schema   # 스키마 JSON 저장 경로
+```
+
+### 지원 DBMS 드라이버 예시
+
+```yaml
+# PostgreSQL
+db:
+  driver: org.postgresql.Driver
+  url: jdbc:postgresql://localhost:5432/mydb
+
+# MSSQL
+db:
+  driver: com.microsoft.sqlserver.jdbc.SQLServerDriver
+  url: jdbc:sqlserver://localhost:1433;databaseName=mydb;encrypt=false
+
+# Oracle
+db:
+  driver: oracle.jdbc.OracleDriver
+  url: jdbc:oracle:thin:@localhost:1521:xe
+```
+
+---
+
+## VectorDB RAG 동작 원리
+
+```
+DB 연결
+  └─► POST /db/initializeSchema
+        ├─ 테이블 스키마 추출
+        ├─ docs/schema/tables/*.json 저장
+        └─ 벡터 DB 인덱싱 (In-memory)
+              └─► GET /knowledge/search?q=자연어 질문
+                    └─ 유사도 검색 → 관련 테이블 정의서 반환
+```
+
+임베딩 제공자별 특성:
+
+| Provider | 특징 |
+|---|---|
+| `local` | 외부 서버 불필요. AllMiniLmL6V2 내장 모델 사용. 빠른 시작 |
+| `ollama` | 로컬 Ollama 서버 필요. `nomic-embed-text` 권장 |
+| `vllm` | OpenAI 호환 API를 제공하는 vLLM 서버 사용 |
+| `gemini` | Google Gemini `text-embedding-004` 사용. API 키 필요 |
+
+---
+
+## 빌드 및 실행
+
+### 요구사항
+- Java 21
+- Maven 3.8+
+
+### 빌드
+```bash
+mvn clean package
+```
+
+### 실행 — HTTP 모드 (기본)
+```bash
+java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar
+```
+> MCP 서버: `http://localhost:7070`
+> Swagger: `http://localhost:7070/swagger`
+
+### 실행 — HTTP 포트 지정
+```bash
+java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar 8080
+```
+
+### 실행 — STDIO 모드
+```bash
+java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
+```
+
+### 실행 — STDIO + DB 인자 직접 지정
+```bash
+java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio \
+  --db.driver=org.postgresql.Driver \
+  --db.url=jdbc:postgresql://localhost:5433/mesdb \
+  --db.user=tester1 \
+  --db.pw=tester1
+```
+
+---
+
+## 초기 설정 순서
+
+1. `application.yml` DB 정보 입력
+2. 서버 실행
+3. `POST /db/initializeSchema` 호출 → 스키마 추출 + 벡터 인덱싱
+4. `GET /knowledge/search?q=테이블 설명` 으로 검색 확인
+5. MCP 클라이언트(AI Studio 등) 연결
+
+---
+
+## 보안 주의사항
+
+- 기본적으로 CORS가 전체 허용(`anyHost`)되어 있습니다.
+- 인증 로직이 없으므로 외부 노출 시 Nginx 등 리버스 프록시에서 인증을 추가하세요.
+- `write_query` 도구는 데이터 변경이 가능하므로, 운영 환경에서는 접근 제어에 주의하세요.
