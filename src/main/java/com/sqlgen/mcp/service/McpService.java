@@ -85,7 +85,7 @@ public class McpService {
     public String searchTables(String query) throws JsonProcessingException {
         if (query == null || query.isEmpty()) return "[]";
         
-        String type = getDbType();
+        String type = getDbType(); 
         String fileName = switch (type) {
             case "ORACLE" -> "oracle_tables_search.sql";
             case "POSTGRES" -> "postgres_tables_search.sql";
@@ -98,7 +98,8 @@ public class McpService {
         }
 
         String sql = loadSql(fileName);
-        return mapper.writeValueAsString(jdbcTemplate.queryForList(sql, "%" + query + "%"));
+        String[] params = new String[] { "%" + query + "%" , "%" + query + "%"} ;
+        return mapper.writeValueAsString(jdbcTemplate.queryForList(sql, params));
     }
 
     public String getTableSchema(String tableName) throws IOException {

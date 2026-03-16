@@ -22,7 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Controller
 public class McpController {
-    private static final Logger logger = LoggerFactory.getLogger(McpController.class);
+    private static final int _15 = 15;
+	private static final Logger logger = LoggerFactory.getLogger(McpController.class);
     private final Map<String, SseBridgeSession> sessions = new ConcurrentHashMap<>();
     private final McpHandler mcpHandler;
     private final com.sqlgen.mcp.service.SchemaService schemaService;
@@ -227,7 +228,7 @@ public class McpController {
                     
                     final String finalQuery = query;
                     final String finalId = id;
-                    Mono.fromCallable(() -> vectorStoreService.search(finalQuery, 5))
+                    Mono.fromCallable(() -> vectorStoreService.search(finalQuery))
                         .subscribe(results -> {
                             try {
                                 String joined = String.join("\\n---\\n", results).replace("\"", "\\\"");
@@ -316,7 +317,7 @@ public class McpController {
                         + "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
                         + "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
                         + "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
-                        + "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}"
+                        + "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색 이 함수를 가장 먼저 사용\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}"
                         + "]}}";
                 ctx.contentType("application/json").status(200).result(resp);
                 return;
@@ -339,7 +340,7 @@ public class McpController {
                         case "read_query"           -> mcpService.executeReadQuery((String) args.get("sql"));
                         case "write_query"          -> mcpService.executeWriteQuery((String) args.get("sql"));
                         case "explain_query"        -> mcpService.explainQuery((String) args.get("sql"));
-                        case "search_knowledge_base"-> String.join("\n---\n", vectorStoreService.search((String) args.get("query"), 5));
+                        case "search_knowledge_base"-> String.join("\n---\n", vectorStoreService.search((String) args.get("query")));
                         default                     -> "Unknown tool: " + toolName;
                     };
                 } catch (Exception e) {
@@ -420,7 +421,7 @@ public class McpController {
         })
     public void searchKnowledge(Context ctx) throws Exception {
         String query = ctx.queryParam("q");
-        List<String> results = vectorStoreService.search(query, 10);
+        List<String> results = vectorStoreService.search(query);
         ctx.contentType("application/json").result(objectMapper.writeValueAsString(Map.of("results", results)));
     }
 

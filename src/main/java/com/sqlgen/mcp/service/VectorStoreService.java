@@ -28,7 +28,9 @@ import jakarta.annotation.PostConstruct;
 @Service
 public class VectorStoreService {
     private static final Logger logger = LoggerFactory.getLogger(VectorStoreService.class);
-
+    
+    public static int DEFAULT_SEARCH_CNT = 15;
+    
     private final ObjectMapper objectMapper;
     private final Environment env;
     private EmbeddingStore<TextSegment> embeddingStore;
@@ -142,7 +144,10 @@ public class VectorStoreService {
 		}
         
     }
-
+    public List<String> search(String query) {
+    	return search(query, DEFAULT_SEARCH_CNT);
+    }
+    
     public List<String> search(String query, int maxResults) {
         if (embeddingStore == null || embeddingModel == null) {
             logger.warn("RAG Search failed: VectorStore is not initialized.");

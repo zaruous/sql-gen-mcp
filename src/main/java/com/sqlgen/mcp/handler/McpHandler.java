@@ -190,7 +190,7 @@ public class McpHandler {
             .callHandler((exchange, request) -> {
                 String query = (String) request.arguments().get("query");
                 try {
-                    List<String> results = vectorStoreService.search(query, 5);
+                    List<String> results = vectorStoreService.search(query);
                     return McpSchema.CallToolResult.builder()
                         .content(List.of(new McpSchema.TextContent(String.join("\n---\n", results))))
                         .isError(false)
