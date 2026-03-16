@@ -27,6 +27,9 @@ public class McpServer {
     }
 
     public static void main(String[] args) {
+    	//스키마 초기화
+    	SchemaInitApplication.main(args);
+    	
         boolean stdioMode = false;
         int portFromArgs = -1;
 
