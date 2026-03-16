@@ -106,6 +106,7 @@ public class SchemaService {
             vectorStoreService.reload();
             return true;
         } catch (SQLException e) {
+        	e.printStackTrace();
             logger.error("Extraction failed: {}", e.getMessage());
             return false;
         }
