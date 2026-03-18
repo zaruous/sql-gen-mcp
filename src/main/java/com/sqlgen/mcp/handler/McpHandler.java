@@ -136,22 +136,22 @@ public class McpHandler {
             .build());
 
         // 5. Write Query
-        server.addTool(McpServerFeatures.SyncToolSpecification.builder()
-            .tool(McpSchema.Tool.builder()
-                .name("write_query")
-                .description("데이터 변경을 위한 SQL 실행 (CUD)")
-                .inputSchema(new McpSchema.JsonSchema("object", 
-                    Map.of("sql", Map.of("type", "string", "description", "실행할 CUD 문")), 
-                    List.of("sql"), false, null, null))
-                .build())
-            .callHandler((exchange, request) -> {
-                String sql = (String) request.arguments().get("sql");
-                return McpSchema.CallToolResult.builder()
-                    .content(List.of(new McpSchema.TextContent(mcpService.executeWriteQuery(sql))))
-                    .isError(false)
-                    .build();
-            })
-            .build());
+//        server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+//            .tool(McpSchema.Tool.builder()
+//                .name("write_query")
+//                .description("데이터 변경을 위한 SQL 실행 (CUD)")
+//                .inputSchema(new McpSchema.JsonSchema("object", 
+//                    Map.of("sql", Map.of("type", "string", "description", "실행할 CUD 문")), 
+//                    List.of("sql"), false, null, null))
+//                .build())
+//            .callHandler((exchange, request) -> {
+//                String sql = (String) request.arguments().get("sql");
+//                return McpSchema.CallToolResult.builder()
+//                    .content(List.of(new McpSchema.TextContent(mcpService.executeWriteQuery(sql))))
+//                    .isError(false)
+//                    .build();
+//            })
+//            .build());
 
         // 6. Explain Query
         server.addTool(McpServerFeatures.SyncToolSpecification.builder()

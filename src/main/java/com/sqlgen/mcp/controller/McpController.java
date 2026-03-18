@@ -168,7 +168,7 @@ public class McpController {
                         "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}," +
                         "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}}," +
                         "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
-                        "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
+//                        "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
                         "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
                         "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}" +
                         "]}}";
@@ -308,7 +308,10 @@ public class McpController {
                 ctx.status(202).result("");
                 return;
             }
-
+            if ("ping".equals(method)) {
+            	ctx.status(200).result("1");
+            	return;
+            }
             if ("tools/list".equals(method)) {
                 String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"result\":{\"tools\":["
                         + "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
@@ -338,7 +341,7 @@ public class McpController {
                         case "search_tables"        -> mcpService.searchTables((String) args.get("query"));
                         case "get_table_schema"     -> mcpService.getTableSchema((String) args.get("tableName"));
                         case "read_query"           -> mcpService.executeReadQuery((String) args.get("sql"));
-                        case "write_query"          -> mcpService.executeWriteQuery((String) args.get("sql"));
+//                        case "write_query"          -> mcpService.executeWriteQuery((String) args.get("sql"));
                         case "explain_query"        -> mcpService.explainQuery((String) args.get("sql"));
                         case "search_knowledge_base"-> String.join("\n---\n", vectorStoreService.search((String) args.get("query")));
                         default                     -> "Unknown tool: " + toolName;

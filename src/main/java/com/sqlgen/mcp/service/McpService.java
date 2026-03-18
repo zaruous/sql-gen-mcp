@@ -148,7 +148,13 @@ public class McpService {
         
         return mapper.writeValueAsString(jdbcTemplate.queryForList(limitedSql));
     }
-
+    
+    /**
+     * 주의: 이 메소드는 SQL 인젝션 공격에 취약할 수 있으므로, 외부 입력을 직접 받아 실행하는 용도로는 권장되지 않습니다.
+     * @param sql
+     * @return
+     */
+    @Deprecated()
     public String executeWriteQuery(String sql) {
         int affectedRows = jdbcTemplate.update(sql);
         return "{\"affectedRows\":" + affectedRows + "}";
