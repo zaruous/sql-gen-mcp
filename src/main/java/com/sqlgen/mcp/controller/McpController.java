@@ -334,6 +334,8 @@ public class McpController {
                 Map<String, Object> args = params != null ? (Map<String, Object>) params.get("arguments") : Map.of();
                 if (args == null) args = Map.of();
 
+                logger.info("Streamable MCP request toolName :{}", toolName);
+                logger.debug("toolName : {} params : {}", toolName, args);
                 String toolResult;
                 try {
                     toolResult = switch (toolName != null ? toolName : "") {
