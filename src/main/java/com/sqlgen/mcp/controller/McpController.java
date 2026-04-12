@@ -164,7 +164,7 @@ public class McpController {
                 if (body.contains("\"method\":\"tools/list\"")) {
                     String id = extractId(body);
                     String response = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"tools\":[" +
-                        "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}," +
+//                        "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}," +
                         "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}," +
                         "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}}," +
                         "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
@@ -314,11 +314,11 @@ public class McpController {
             }
             if ("tools/list".equals(method)) {
                 String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"result\":{\"tools\":["
-                        + "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
+//                        + "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
                         + "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}},"
                         + "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}},"
                         + "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
-                        + "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
+//                        + "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
                         + "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
                         + "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색 이 함수를 가장 먼저 사용\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}"
                         + "]}}";
@@ -406,7 +406,8 @@ public class McpController {
     public void readQuery(Context ctx) throws Exception {
         ctx.contentType("application/json").result(mcpService.executeReadQuery(ctx.body()));
     }
-
+    
+    @Deprecated
     @OpenApiIgnore
     @OpenApi(path = "/query/write", methods = HttpMethod.POST, summary = "Write query",
         requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = String.class), description = "INSERT/UPDATE/DELETE SQL statement", required = true))
