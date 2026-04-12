@@ -165,12 +165,15 @@ public class McpController {
                     String id = extractId(body);
                     String response = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"tools\":[" +
 //                        "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}," +
-                        "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}," +
+"{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객)\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"},\"topK\":{\"type\":\"integer\",\"description\":\"반환할 최대 결과 수 (기본값: 15, 최대: 30)\"}},\"required\":[\"query\"]}}," +
+"{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객)\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}," +						
+						
+						
                         "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}}," +
                         "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
 //                        "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
-                        "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}," +
-                        "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}" +
+                        "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}" +
+                        
                         "]}}";
                     
                     synchronized (sessionWrapper.sseClient) {
@@ -184,7 +187,44 @@ public class McpController {
                     return;
                 }
 
-                // 3. explain_query 호출 인터셉트
+                // 3. search_tables 호출 인터셉트 (결과 없으면 search_knowledge_base 폴백)
+                if (body.contains("\"method\":\"tools/call\"") && body.contains("\"name\":\"search_tables\"")) {
+                    String id = extractId(body);
+                    int queryIdx = body.indexOf("\"query\":");
+                    String query = "";
+                    if (queryIdx > 0) {
+                        int start = body.indexOf("\"", queryIdx + 8) + 1;
+                        int end = body.indexOf("\"", start);
+                        if (start > 0 && end > start) query = body.substring(start, end).replace("\\\"", "\"");
+                    }
+                    final String finalQuery = query;
+                    final String finalId = id;
+                    Mono.fromCallable(() -> {
+                        String tableResult = mcpService.searchTables(finalQuery);
+                        if ("[]".equals(tableResult.trim())) {
+                            logger.info("search_tables SSE: no results, falling back to search_knowledge_base");
+                            return "[테이블 검색 결과 없음 - 지식베이스 검색 결과]\n"
+                                + String.join("\n---\n", vectorStoreService.search(finalQuery));
+                        }
+                        return tableResult;
+                    }).subscribe(result -> {
+                        try {
+                            String escapedResult = result.replace("\"", "\\\"");
+                            String response = "{\"jsonrpc\":\"2.0\",\"id\":" + finalId + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + escapedResult + "\"}]}}";
+                            synchronized (sessionWrapper.sseClient) {
+                                java.io.PrintWriter writer = sessionWrapper.sseClient.ctx().res().getWriter();
+                                writer.write("event: message\ndata: " + response + "\n\n");
+                                writer.flush();
+                            }
+                        } catch (Exception e) {
+                            logger.error("search_tables SSE fail", e);
+                        }
+                    });
+                    ctx.status(200).result("Accepted");
+                    return;
+                }
+
+                // 4. explain_query 호출 인터셉트
                 if (body.contains("\"method\":\"tools/call\"") && body.contains("\"name\":\"explain_query\"")) {
                     String id = extractId(body);
                     int sqlIdx = body.indexOf("\"sql\":");
@@ -225,10 +265,10 @@ public class McpController {
                         int end = body.indexOf("\"", start);
                         if (start > 0 && end > start) query = body.substring(start, end).replace("\\\"", "\"");
                     }
-                    
+                    final int topK = extractTopK(body);
                     final String finalQuery = query;
                     final String finalId = id;
-                    Mono.fromCallable(() -> vectorStoreService.search(finalQuery))
+                    Mono.fromCallable(() -> vectorStoreService.search(finalQuery, topK))
                         .subscribe(results -> {
                             try {
                                 String joined = String.join("\\n---\\n", results).replace("\"", "\\\"");
@@ -315,12 +355,14 @@ public class McpController {
             if ("tools/list".equals(method)) {
                 String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"result\":{\"tools\":["
 //                        + "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
-                        + "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}},"
++ "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색 이 함수를 가장 먼저 사용. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객)\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"},\"topK\":{\"type\":\"integer\",\"description\":\"반환할 최대 결과 수 (기본값: 15, 최대: 30)\"}},\"required\":[\"query\"]}},"						
++ "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객) \",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}},"                        
+						
                         + "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}},"
                         + "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
 //                        + "{\"name\":\"write_query\",\"description\":\"CUD SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
-                        + "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
-                        + "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색 이 함수를 가장 먼저 사용\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}"
+                        + "{\"name\":\"explain_query\",\"description\":\"SQL 실행 계획 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}}"
+                        
                         + "]}}";
                 ctx.contentType("application/json").status(200).result(resp);
                 return;
@@ -340,12 +382,24 @@ public class McpController {
                 try {
                     toolResult = switch (toolName != null ? toolName : "") {
                         case "get_table_list"       -> mcpService.getTableList();
-                        case "search_tables"        -> mcpService.searchTables((String) args.get("query"));
+                        case "search_tables"        -> {
+                            String tableResult = mcpService.searchTables((String) args.get("query"));
+                            if ("[]".equals(tableResult.trim())) {
+                                logger.info("search_tables: no results, falling back to search_knowledge_base");
+                                yield "[테이블 검색 결과 없음 - 지식베이스 검색 결과]\n"
+                                    + String.join("\n---\n", vectorStoreService.search((String) args.get("query")));
+                            }
+                            yield tableResult;
+                        }
                         case "get_table_schema"     -> mcpService.getTableSchema((String) args.get("tableName"));
                         case "read_query"           -> mcpService.executeReadQuery((String) args.get("sql"));
 //                        case "write_query"          -> mcpService.executeWriteQuery((String) args.get("sql"));
                         case "explain_query"        -> mcpService.explainQuery((String) args.get("sql"));
-                        case "search_knowledge_base"-> String.join("\n---\n", vectorStoreService.search((String) args.get("query")));
+                        case "search_knowledge_base" -> {
+                            Object topKArg = args.get("topK");
+                            int topK = topKArg instanceof Number ? Math.min(((Number) topKArg).intValue(), 30) : 15;
+                            yield String.join("\n---\n", vectorStoreService.search((String) args.get("query"), topK));
+                        }
                         default                     -> "Unknown tool: " + toolName;
                     };
                 } catch (Exception e) {
@@ -377,6 +431,22 @@ public class McpController {
             if (start > 0 && end > start) return body.substring(start, end).trim();
         }
         return "null";
+    }
+
+    private int extractTopK(String body) {
+        int idx = body.indexOf("\"topK\":");
+        if (idx > 0) {
+            int start = body.indexOf(":", idx) + 1;
+            int end = body.indexOf(",", start);
+            if (end < 0) end = body.indexOf("}", start);
+            if (start > 0 && end > start) {
+                try {
+                    int val = Integer.parseInt(body.substring(start, end).trim());
+                    return Math.min(Math.max(val, 1), 30);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        return 15;
     }
 
     @OpenApi(path = "/tables", methods = HttpMethod.GET, summary = "Get tables", 

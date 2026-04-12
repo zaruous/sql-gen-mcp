@@ -6,6 +6,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -84,8 +85,8 @@ public class McpService {
 
     public String searchTables(String query) throws JsonProcessingException {
         if (query == null || query.isEmpty()) return "[]";
-        
-        String type = getDbType(); 
+
+        String type = getDbType();
         String fileName = switch (type) {
             case "ORACLE" -> "oracle_tables_search.sql";
             case "POSTGRES" -> "postgres_tables_search.sql";
@@ -98,8 +99,21 @@ public class McpService {
         }
 
         String sql = loadSql(fileName);
-        String[] params = new String[] { "%" + query + "%" , "%" + query + "%"} ;
-        return mapper.writeValueAsString(jdbcTemplate.queryForList(sql, params));
+        String[] keywords = query.split(",");
+        // 테이블명 기준 중복 제거 (LinkedHashMap으로 순서 유지)
+        Map<Object, Map<String, Object>> merged = new LinkedHashMap<>();
+        for (String keyword : keywords) {
+            String kw = keyword.trim();
+            if (kw.isEmpty()) continue;
+            String[] params = new String[] { "%" + kw + "%", "%" + kw + "%" };
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, params);
+            for (Map<String, Object> row : rows) {
+                Object key = row.get("TABLE_NAME");
+                if (key == null) key = row.values().iterator().next();
+                merged.putIfAbsent(key, row);
+            }
+        }
+        return mapper.writeValueAsString(new ArrayList<>(merged.values()));
     }
 
     public String getTableSchema(String tableName) throws IOException {
