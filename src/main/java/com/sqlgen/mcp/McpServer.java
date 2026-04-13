@@ -27,8 +27,13 @@ public class McpServer {
     }
 
     public static void main(String[] args) {
-    	//스키마 초기화
-    	SchemaInitApplication.main(args);
+        // --key=value 형태의 커맨드라인 인수를 System property로 등록
+        for (String arg : args) {
+            if (arg.startsWith("--") && arg.contains("=")) {
+                String[] parts = arg.substring(2).split("=", 2);
+                System.setProperty(parts[0], parts[1]);
+            }
+        }
     	
         boolean stdioMode = false;
         int portFromArgs = -1;
@@ -36,7 +41,7 @@ public class McpServer {
         for (String arg : args) {
             if ("--stdio".equals(arg)) {
                 stdioMode = true;
-            } else {
+            } else if (!arg.startsWith("--")) {
                 try {
                     portFromArgs = Integer.parseInt(arg);
                 } catch (NumberFormatException ignored) {}
@@ -72,7 +77,7 @@ public class McpServer {
             }
             
             org.springframework.core.env.PropertiesPropertySource source = new org.springframework.core.env.PropertiesPropertySource("appConfig", props);
-            context.getEnvironment().getPropertySources().addFirst(source);
+            context.getEnvironment().getPropertySources().addLast(source);
             
         } catch (Exception e) {
             logger.warn("Failed to load application.yml into Spring Environment: {}", e.getMessage());
@@ -111,12 +116,11 @@ public class McpServer {
     public void launchStdio() {
         AnnotationConfigApplicationContext context = createSpringContext();
         com.sqlgen.mcp.handler.McpHandler mcpHandler = context.getBean(com.sqlgen.mcp.handler.McpHandler.class);
-        
-        
-        SchemaInitService bean = context.getBean(SchemaInitService.class);
-        bean.initializeSchema(null);
+
+        SchemaInitService schemaInitService = context.getBean(SchemaInitService.class);
+        schemaInitService.initializeSchema(null);
         logger.info("Schema initialized.");
-        
+
         // Stdio 트랜스포트 프로바이더로 서버 시작
         StdioServerTransportProvider transportProvider = 
             new StdioServerTransportProvider(McpJsonDefaults.getMapper());
@@ -132,7 +136,11 @@ public class McpServer {
         AnnotationConfigApplicationContext context = createSpringContext();
         com.sqlgen.mcp.controller.McpController mcpController = context.getBean(com.sqlgen.mcp.controller.McpController.class);
         com.fasterxml.jackson.databind.ObjectMapper sharedObjectMapper = context.getBean(com.fasterxml.jackson.databind.ObjectMapper.class);
-        
+
+        SchemaInitService schemaInitService = context.getBean(SchemaInitService.class);
+        schemaInitService.initializeSchema(null);
+        logger.info("Schema initialized.");
+
         int port = 7070;
         try {
             port = Integer.parseInt(context.getEnvironment().getProperty("mcp.port", 

@@ -55,7 +55,7 @@ public class VectorStoreService {
         try {
             this.embeddingModel = createEmbeddingModel(provider);
             this.embeddingStore = new InMemoryEmbeddingStore<>();
-            loadAndIndexDocs();
+            // 인덱싱은 스키마 추출 완료 후 reload()에서 수행
         } catch (Exception e) {
             logger.error("Failed to initialize VectorStore: {}", e.getMessage(), e);
         }

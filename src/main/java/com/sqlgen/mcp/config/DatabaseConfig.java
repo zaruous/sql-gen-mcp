@@ -58,10 +58,17 @@ public class DatabaseConfig {
     }
 
     private String getEnvOrYaml(JsonNode dbNode, String yamlKey, String envKey, String defaultValue) {
+        // 1. 환경 변수
         String envValue = System.getenv(envKey);
         if (envValue != null && !envValue.isEmpty()) {
             return envValue;
         }
+        // 2. 커맨드라인 --db.xxx=value (System property)
+        String sysProp = System.getProperty("db." + yamlKey);
+        if (sysProp != null && !sysProp.isEmpty()) {
+            return sysProp;
+        }
+        // 3. application.yml
         if (dbNode != null && dbNode.has(yamlKey)) {
             return dbNode.path(yamlKey).asText();
         }

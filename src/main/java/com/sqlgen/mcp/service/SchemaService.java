@@ -57,12 +57,12 @@ public class SchemaService {
     }
 
     public boolean extractAndSave(String outputDir) {
-        return doExtractAndSave(dataSource, defaultOutputDir);
+        return doExtractAndSave(dataSource, defaultOutputDir, true);
     }
 
     public boolean extractAndSave(String driver, String url, String user, String pw) {
         DataSource ds = createDataSource(driver, url, user, pw);
-        return doExtractAndSave(ds, defaultOutputDir);
+        return doExtractAndSave(ds, defaultOutputDir, true);
     }
 
     private DataSource createDataSource(String driver, String url, String user, String pw) {
@@ -74,7 +74,7 @@ public class SchemaService {
         return ds;
     }
 
-    private boolean doExtractAndSave(DataSource ds, String outputDir) {
+    private boolean doExtractAndSave(DataSource ds, String outputDir, boolean reloadAfter) {
         try (Connection conn = ds.getConnection()) {
             String dbType = getDbType(conn);
             List<TableInfo> tables = new ArrayList<>();
@@ -103,7 +103,9 @@ public class SchemaService {
                 tables.add(tableInfo);
             }
             save(tables, outputDir);
-            vectorStoreService.reload();
+            if (reloadAfter) {
+                vectorStoreService.reload();
+            }
             return true;
         } catch (SQLException e) {
         	e.printStackTrace();
