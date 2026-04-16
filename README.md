@@ -310,7 +310,7 @@ docker run -d \
 ### Docker Hub에서 가져오기
 
 ```bash
-docker pull zaruous/sql-gen-mcp:latest
+docker pull callakrsos/sql-gen-mcp:latest
 
 docker run -d \
   -p 7070:7070 \
@@ -318,7 +318,7 @@ docker run -d \
   -e DB_URL=jdbc:postgresql://host.docker.internal:5432/mydb \
   -e DB_USER=myuser \
   -e DB_PW=mypassword \
-  zaruous/sql-gen-mcp:latest
+  callakrsos/sql-gen-mcp:latest
 ```
 
 ---
