@@ -89,15 +89,16 @@ java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
 
 | 도구명 | 설명 | 입력 파라미터 |
 |---|---|---|
-| `search_knowledge_base` | **(최우선 권장)** 자연어로 테이블 정의서·스키마 지식 베이스 검색 | `query: string` |
+| `search_knowledge_base` | **(최우선 권장)** 자연어로 테이블 정의서·스키마 지식 베이스 검색 | `query: string`, `topK: integer` (선택, 기본값: 15, 최대: 30) |
 | `search_tables` | 키워드로 테이블명 검색 | `query: string` |
 | `get_table_schema` | 특정 테이블의 컬럼·타입·제약조건 상세 조회 | `tableName: string` |
 | `read_query` | SELECT SQL 실행 및 결과 반환 | `sql: string` |
-| `write_query` | INSERT / UPDATE / DELETE SQL 실행 | `sql: string` |
 | `explain_query` | SQL 실행 계획(Execution Plan) 분석 | `sql: string` |
 | `get_table_list` | DB 전체 테이블 목록 조회 (테이블 수가 많을 경우 비권장) | 없음 |
 
 > AI가 SQL을 생성할 때 권장 순서: `search_knowledge_base` → `search_tables` → `get_table_schema` → `read_query`
+
+> `write_query` (INSERT/UPDATE/DELETE)는 안전을 위해 현재 비활성화되어 있습니다.
 
 ---
 
@@ -124,7 +125,7 @@ java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
 
 | Method | Endpoint | 설명 |
 |---|---|---|
-| `GET` | `/knowledge/search?q=질문` | 자연어로 연관 테이블 정의서 검색 |
+| `GET` | `/knowledge/search?q=질문&topK=15` | 자연어로 연관 테이블 정의서 검색 (`topK` 선택, 기본값: 15, 최대: 30) |
 | `POST` | `/schema/extract` | DB 스키마 추출 → JSON 파일 저장 |
 | `POST` | `/db/initializeSchema` | 스키마 추출 + 벡터 DB 인덱싱 |
 
@@ -256,9 +257,75 @@ java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio \
 
 ---
 
+## Docker
+
+### Docker Compose로 실행 (PostgreSQL 포함)
+
+```bash
+docker-compose up -d
+```
+
+`docker-compose.yml`에 PostgreSQL 16이 포함되어 있어 별도 DB 없이 바로 실행할 수 있습니다.
+
+### 이미지 직접 빌드 및 실행
+
+```bash
+# 빌드
+docker build -t sql-gen-mcp .
+
+# 실행 (환경변수로 DB 지정)
+docker run -d \
+  -p 7070:7070 \
+  -p 8081:8081 \
+  -e DB_DRIVER=org.postgresql.Driver \
+  -e DB_URL=jdbc:postgresql://host.docker.internal:5432/mydb \
+  -e DB_USER=myuser \
+  -e DB_PW=mypassword \
+  -v $(pwd)/docs/schema:/app/docs/schema \
+  sql-gen-mcp
+```
+
+### Docker 환경변수
+
+| 환경변수 | 설명 | 기본값 |
+|---|---|---|
+| `DB_DRIVER` | JDBC 드라이버 클래스명 | `org.postgresql.Driver` |
+| `DB_URL` | JDBC 연결 URL | - |
+| `DB_USER` | DB 사용자명 | - |
+| `DB_PW` | DB 비밀번호 | - |
+
+> `application.yml`을 볼륨 마운트하거나 환경변수로 덮어쓸 수 있습니다. 환경변수가 `application.yml`보다 우선합니다.
+
+### 컨테이너 시작 순서
+
+컨테이너 실행 시 `entrypoint.sh`가 아래 순서로 동작합니다:
+
+```
+1. SchemaInitApplication 실행 → DB 스키마 추출 + docs/schema/*.json 저장
+2. McpServer 실행 → HTTP/MCP 서버 시작 (포트 7070)
+```
+
+스키마 초기화 실패 시 서버가 시작되지 않습니다. DB 연결 정보를 먼저 확인하세요.
+
+### Docker Hub에서 가져오기
+
+```bash
+docker pull zaruous/sql-gen-mcp:latest
+
+docker run -d \
+  -p 7070:7070 \
+  -e DB_DRIVER=org.postgresql.Driver \
+  -e DB_URL=jdbc:postgresql://host.docker.internal:5432/mydb \
+  -e DB_USER=myuser \
+  -e DB_PW=mypassword \
+  zaruous/sql-gen-mcp:latest
+```
+
+---
+
 ## 초기 설정 순서
 
-1. `application.yml` DB 정보 입력
+1. `application.yml` DB 정보 입력 (또는 환경변수 설정)
 2. 서버 실행
 3. `POST /db/initializeSchema` 호출 → 스키마 추출 + 벡터 인덱싱
 4. `GET /knowledge/search?q=테이블 설명` 으로 검색 확인
@@ -270,4 +337,4 @@ java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio \
 
 - 기본적으로 CORS가 전체 허용(`anyHost`)되어 있습니다.
 - 인증 로직이 없으므로 외부 노출 시 Nginx 등 리버스 프록시에서 인증을 추가하세요.
-- `write_query` 도구는 데이터 변경이 가능하므로, 운영 환경에서는 접근 제어에 주의하세요.
+- `write_query` 도구(INSERT/UPDATE/DELETE)는 현재 비활성화 상태입니다. 운영 환경에서 활성화 시 접근 제어에 주의하세요.

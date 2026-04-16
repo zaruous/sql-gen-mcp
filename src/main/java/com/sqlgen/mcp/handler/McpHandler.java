@@ -183,14 +183,21 @@ public class McpHandler {
             .tool(McpSchema.Tool.builder()
                 .name("search_knowledge_base")
                 .description("자연어로 데이터베이스 스키마 및 테이블 정의서(docs) 검색")
-                .inputSchema(new McpSchema.JsonSchema("object", 
-                    Map.of("query", Map.of("type", "string", "description", "검색할 자연어 질문 또는 키워드")), 
+                .inputSchema(new McpSchema.JsonSchema("object",
+                    Map.of(
+                        "query", Map.of("type", "string", "description", "검색할 자연어 질문 또는 키워드"),
+                        "topK", Map.of("type", "integer", "description", "반환할 최대 결과 수 (기본값: 15, 최대: 30)")
+                    ),
                     List.of("query"), false, null, null))
                 .build())
             .callHandler((exchange, request) -> {
                 String query = (String) request.arguments().get("query");
+                Object topKObj = request.arguments().get("topK");
+                int maxResults = (topKObj instanceof Number)
+                    ? Math.min(((Number) topKObj).intValue(), 30)
+                    : com.sqlgen.mcp.service.VectorStoreService.DEFAULT_SEARCH_CNT;
                 try {
-                    List<String> results = vectorStoreService.search(query);
+                    List<String> results = vectorStoreService.search(query, maxResults);
                     return McpSchema.CallToolResult.builder()
                         .content(List.of(new McpSchema.TextContent(String.join("\n---\n", results))))
                         .isError(false)

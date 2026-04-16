@@ -493,11 +493,17 @@ public class McpController {
 
     @OpenApi(path = "/knowledge/search", methods = HttpMethod.GET, summary = "Search knowledge base (RAG)",
         queryParams = {
-            @OpenApiParam(name = "q", description = "Natural language query", required = true)
+            @OpenApiParam(name = "q", description = "Natural language query", required = true),
+            @OpenApiParam(name = "topK", description = "Max results to return (default: 15, max: 30)", required = false, type = Integer.class)
         })
     public void searchKnowledge(Context ctx) throws Exception {
         String query = ctx.queryParam("q");
-        List<String> results = vectorStoreService.search(query);
+        String topKParam = ctx.queryParam("topK");
+        int topK = com.sqlgen.mcp.service.VectorStoreService.DEFAULT_SEARCH_CNT;
+        if (topKParam != null) {
+            try { topK = Math.min(Integer.parseInt(topKParam), 30); } catch (NumberFormatException ignored) {}
+        }
+        List<String> results = vectorStoreService.search(query, topK);
         ctx.contentType("application/json").result(objectMapper.writeValueAsString(Map.of("results", results)));
     }
 
