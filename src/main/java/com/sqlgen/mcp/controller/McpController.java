@@ -166,7 +166,7 @@ public class McpController {
                     String response = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"tools\":[" +
 //                        "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}," +
 "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객)\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"},\"topK\":{\"type\":\"integer\",\"description\":\"반환할 최대 결과 수 (기본값: 15, 최대: 30)\"}},\"required\":[\"query\"]}}," +
-"{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객)\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}," +						
+//"{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객)\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}}," +						
 						
 						
                         "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}}," +
@@ -356,7 +356,7 @@ public class McpController {
                 String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"result\":{\"tools\":["
 //                        + "{\"name\":\"get_table_list\",\"description\":\"DB 테이블 목록 및 코멘트 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
 + "{\"name\":\"search_knowledge_base\",\"description\":\"자연어로 테이블 정의서 검색 이 함수를 가장 먼저 사용. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객)\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"},\"topK\":{\"type\":\"integer\",\"description\":\"반환할 최대 결과 수 (기본값: 15, 최대: 30)\"}},\"required\":[\"query\"]}},"						
-+ "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객) \",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}},"                        
+//+ "{\"name\":\"search_tables\",\"description\":\"키워드로 테이블 검색. 쉼표(,)로 구분해 다건 검색 가능 (예: 주문,고객) \",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}},"                        
 						
                         + "{\"name\":\"get_table_schema\",\"description\":\"특정 테이블의 상세 스키마 조회\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"tableName\":{\"type\":\"string\"}},\"required\":[\"tableName\"]}},"
                         + "{\"name\":\"read_query\",\"description\":\"SELECT SQL 실행\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"sql\":{\"type\":\"string\"}},\"required\":[\"sql\"]}},"
