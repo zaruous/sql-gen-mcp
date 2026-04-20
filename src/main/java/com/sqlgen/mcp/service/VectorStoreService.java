@@ -3,9 +3,11 @@ package com.sqlgen.mcp.service;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sqlgen.mcp.admin.ToolMetadataStore;
 
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -31,20 +34,35 @@ import jakarta.annotation.PostConstruct;
 @Service
 public class VectorStoreService {
     private static final Logger logger = LoggerFactory.getLogger(VectorStoreService.class);
-    
+
     public static int DEFAULT_SEARCH_CNT = 15;
-    
+
+    public record TableSummary(String tableName, String comment, int columnCount) {}
+
     private final ObjectMapper objectMapper;
     private final Environment env;
+    private final ToolMetadataStore metadataStore;
+    private final KoreanQueryTranslator koreanTranslator;
     private EmbeddingStore<TextSegment> embeddingStore;
     private EmbeddingModel embeddingModel;
+    private volatile boolean ready = false;
+    private volatile int tableCount = 0;
+    private final List<TableSummary> tableSummaries = new ArrayList<>();
+
+    /** 테이블명 → 임베딩에 사용한 전체 텍스트 (검색 결과 반환용) */
+    private final Map<String, String> tableContentText = new ConcurrentHashMap<>();
+    /** 테이블명 → 텍스트 매칭용 소문자 키워드 풀 (tableName + comment + 컬럼명 + remark) */
+    private final Map<String, String> tableKeywordText = new ConcurrentHashMap<>();
 
     @Value("${db.schema-output-dir:docs/schema}")
     private String schemaPath;
 
-    public VectorStoreService(ObjectMapper objectMapper, Environment env) {
+    public VectorStoreService(ObjectMapper objectMapper, Environment env, ToolMetadataStore metadataStore,
+                              KoreanQueryTranslator koreanTranslator) {
         this.objectMapper = objectMapper;
         this.env = env;
+        this.metadataStore = metadataStore;
+        this.koreanTranslator = koreanTranslator;
     }
 
     @PostConstruct
@@ -63,13 +81,20 @@ public class VectorStoreService {
 
     public void reload() {
         logger.info("Reloading and re-indexing knowledge base from {}...", schemaPath);
+        ready = false;
         try {
-            this.embeddingStore = new InMemoryEmbeddingStore<>(); // Clear existing
+            this.embeddingStore = new InMemoryEmbeddingStore<>();
+            tableContentText.clear();
+            tableKeywordText.clear();
             loadAndIndexDocs();
         } catch (Exception e) {
             logger.error("Failed to reload VectorStore: {}", e.getMessage(), e);
         }
     }
+
+    public boolean isReady() { return ready; }
+    public int getTableCount() { return tableCount; }
+    public List<TableSummary> getTableSummaries() { return List.copyOf(tableSummaries); }
 
     private EmbeddingModel createEmbeddingModel(String provider) {
         String prefix = "ai.vector-store.providers." + provider;
@@ -108,22 +133,31 @@ public class VectorStoreService {
             return;
         }
         
-		File[] listFiles = dir.listFiles((d, name) -> name.endsWith(".json"));
+        File[] listFiles = dir.listFiles((d, name) -> name.endsWith(".json"));
         if (listFiles == null) return;
+        tableCount = 0;
+        tableSummaries.clear();
+        tableContentText.clear();
+        tableKeywordText.clear();
 
-		for(File file : listFiles) {
-			logger.info("Indexing tables from {}...", file.getAbsolutePath());
-	        JsonNode root = objectMapper.readTree(file);
-	        
+        for (File file : listFiles) {
+            logger.info("Indexing tables from {}...", file.getAbsolutePath());
+            JsonNode root = objectMapper.readTree(file);
+
             List<TextSegment> segments = new ArrayList<>();
 
             String tableName = root.path("tableName").asText();
-            String comment = root.path("comment").asText();
+            String comment   = root.path("comment").asText();
             
             StringBuilder content = new StringBuilder();
             content.append("Table: ").append(tableName).append("\n");
             content.append("Description: ").append(comment).append("\n");
             content.append("Columns:\n");
+
+            // 텍스트 매칭용 키워드 풀 구성 (소문자)
+            StringBuilder kwPool = new StringBuilder();
+            kwPool.append(tableName.toLowerCase()).append(" ");
+            kwPool.append(comment.toLowerCase()).append(" ");
 
             JsonNode columns = root.path("columns");
             if (columns.isArray()) {
@@ -139,49 +173,150 @@ public class VectorStoreService {
                         content.append(" : ").append(colRemark);
                     }
                     content.append("\n");
+
+                    kwPool.append(colName.toLowerCase()).append(" ");
+                    kwPool.append(colRemark.toLowerCase()).append(" ");
                 }
             }
-            
+
             segments.add(TextSegment.from(content.toString()));
-        
-            
+            tableContentText.put(tableName, content.toString());
+            tableKeywordText.put(tableName, kwPool.toString());
+
+            int colCount = columns.isArray() ? columns.size() : 0;
+            tableSummaries.add(new TableSummary(tableName, comment, colCount));
+
             if (!segments.isEmpty()) {
                 logger.info("Embedding {} table definitions using {}...", segments.size(), embeddingModel.getClass().getSimpleName());
                 for (TextSegment segment : segments) {
                     embeddingStore.add(embeddingModel.embed(segment).content(), segment);
                 }
+                tableCount++;
                 logger.info("Successfully indexed {} tables.", segments.size());
             }
-        
-		}
-        
+
+        }
+        ready = true;
+        logger.info("Knowledge base indexing complete. Total tables: {}", tableCount);
     }
     public List<String> search(String query) {
-        String[] keywords = query.split(",");
-        if (keywords.length == 1) {
-            return toTextList(searchMatches(query.trim(), DEFAULT_SEARCH_CNT));
-        }
-        // 다건 검색: 키워드별 검색 후 텍스트 기준 중복 제거, score 내림차순 재정렬
-        Map<String, EmbeddingMatch<TextSegment>> merged = new LinkedHashMap<>();
-        for (String keyword : keywords) {
-            String kw = keyword.trim();
-            if (kw.isEmpty()) continue;
-            for (EmbeddingMatch<TextSegment> match : searchMatches(kw, DEFAULT_SEARCH_CNT)) {
-                String text = match.embedded().text();
-                // 같은 텍스트가 중복될 경우 더 높은 score 유지
-                merged.merge(text, match, (existing, incoming) ->
-                        incoming.score() > existing.score() ? incoming : existing);
-            }
-        }
-        return toTextList(
-                merged.values().stream()
-                        .sorted(Comparator.comparingDouble((EmbeddingMatch<TextSegment> m) -> m.score()).reversed())
-                        .collect(Collectors.toList())
-        );
+        return hybridSearch(query, DEFAULT_SEARCH_CNT);
     }
 
     public List<String> search(String query, int maxResults) {
-        return toTextList(searchMatches(query, Math.min(maxResults, 30)));
+        return hybridSearch(query, Math.min(maxResults, 30));
+    }
+
+    /**
+     * 하이브리드 검색: 텍스트 키워드 매칭 + 벡터 유사도 병합.
+     *
+     * 점수 체계 (텍스트 매칭은 한국어에서 특히 유리):
+     *   - 테이블명 정확 일치      : 1.00
+     *   - 테이블명 포함           : 0.90
+     *   - 코멘트/컬럼명/remark 포함: 0.70
+     *   - 벡터 유사도             : cosine * 0.85 (영어 특화 모델 보정)
+     * 같은 테이블에 여러 점수가 있으면 최대값 사용.
+     */
+    private List<String> hybridSearch(String query, int maxResults) {
+        if (embeddingStore == null || embeddingModel == null) {
+            logger.warn("Search failed: VectorStore is not initialized.");
+            return List.of();
+        }
+
+        // 한국어 키워드를 영어로 번역하여 쉼표로 추가 (원문은 텍스트 매칭, 번역어는 벡터 검색에 기여)
+        StringBuilder expandedQuery = new StringBuilder(query);
+        for (String raw : query.split(",")) {
+            String translated = koreanTranslator.translate(raw.trim());
+            if (!translated.equals(raw.trim()) && !translated.isBlank()) {
+                expandedQuery.append(",").append(translated);
+                logger.info("[Hybrid] Korean expanded: '{}' → appended '{}'", raw.trim(), translated);
+            }
+        }
+        String[] keywords = expandedQuery.toString().split(",");
+        // tableName → 최고 점수
+        Map<String, Double> scoreMap = new LinkedHashMap<>();
+
+        for (String raw : keywords) {
+            String kw    = raw.trim();
+            String kwLow = kw.toLowerCase();
+            if (kwLow.isEmpty()) continue;
+
+            // ── 1. 텍스트 키워드 매칭 (한국어 친화적) ──────────────────────
+            for (Map.Entry<String, String> entry : tableKeywordText.entrySet()) {
+                String tName = entry.getKey();
+                String pool  = entry.getValue(); // 소문자 키워드 풀
+
+                if (!pool.contains(kwLow)) continue;
+
+                double score;
+                String nameLow = tName.toLowerCase();
+                if (nameLow.equals(kwLow)) {
+                    score = 1.00;
+                } else if (nameLow.contains(kwLow)) {
+                    score = 0.90;
+                } else {
+                    // comment / 컬럼명 / remark 에서 매칭
+                    score = 0.70;
+                }
+                scoreMap.merge(tName, score, Math::max);
+            }
+
+            // ── 2. 벡터 유사도 검색 (영어 의미 커버) ──────────────────────
+            logger.info("[Hybrid] Vector search: '{}'", kw);
+            EmbeddingSearchRequest req = EmbeddingSearchRequest.builder()
+                    .queryEmbedding(embeddingModel.embed(kw).content())
+                    .maxResults(maxResults * 2)
+                    .minScore(0.3)
+                    .build();
+            List<EmbeddingMatch<TextSegment>> vectorMatches = embeddingStore.search(req).matches();
+
+            for (EmbeddingMatch<TextSegment> match : vectorMatches) {
+                String text      = match.embedded().text();
+                String firstLine = text.lines().findFirst().orElse("").trim();
+                String tName     = firstLine.startsWith("Table:") ? firstLine.substring(6).trim() : firstLine;
+                double vecScore  = match.score() * 0.85; // 영어 모델 보정
+                scoreMap.merge(tName, vecScore, Math::max);
+            }
+        }
+
+        // ── 3. tool-metadata.json 가중치 적용 ────────────────────────────
+        // keywords 가 비어 있으면 모든 쿼리에 적용, 있으면 쿼리 키워드 포함 시에만 적용
+        Map<String, ToolMetadataStore.ToolMeta> allMeta = metadataStore.getAll();
+        if (!allMeta.isEmpty()) {
+            final String[] kwArr = keywords;
+            scoreMap.replaceAll((tableName, score) -> {
+                if (!allMeta.containsKey(tableName)) return score;
+                ToolMetadataStore.ToolMeta meta = allMeta.get(tableName);
+                boolean shouldBoost = java.util.Arrays.stream(kwArr)
+                        .anyMatch(k -> meta.matchesQuery(k.trim()));
+                if (shouldBoost) {
+                    double boosted = score * meta.boost();
+                    logger.debug("[Hybrid] boost applied: table={} {}× → score {} → {}",
+                            tableName, meta.boost(), String.format("%.4f", score), String.format("%.4f", boosted));
+                    return boosted;
+                }
+                return score;
+            });
+        }
+
+        // ── 4. 점수 내림차순 정렬 후 반환 ─────────────────────────────────
+        List<String> result = scoreMap.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .limit(maxResults)
+                .map(e -> tableContentText.getOrDefault(e.getKey(), "Table: " + e.getKey()))
+                .filter(t -> !t.isEmpty())
+                .collect(Collectors.toList());
+
+        logger.info("[Hybrid] query='{}' → {} results", query, result.size());
+        if (logger.isDebugEnabled()) {
+            scoreMap.entrySet().stream()
+                    .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .limit(maxResults)
+                    .forEach(e -> logger.debug("[Hybrid]  score={} table={}",
+                            String.format("%.4f", e.getValue()), e.getKey()));
+        }
+
+        return result;
     }
 
     private List<EmbeddingMatch<TextSegment>> searchMatches(String query, int maxResults) {

@@ -12,8 +12,10 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import javax.sql.DataSource;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -162,7 +164,7 @@ public class SchemaService {
             String module = entry.getKey();
             List<TableInfo> moduleTables = entry.getValue();
             File mdFile = new File(dir, module + "_SCHEMA.md");
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(mdFile))) {
+            try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(mdFile), StandardCharsets.UTF_8))) {
                 writer.write("# " + module + " Schema Definition\n\n");
                 for (TableInfo table : moduleTables) {
                     writer.write("## " + table.tableName + " (" + table.comment + ")\n\n");
