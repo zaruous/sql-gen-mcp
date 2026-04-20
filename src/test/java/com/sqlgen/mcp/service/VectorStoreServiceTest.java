@@ -39,7 +39,10 @@ class VectorStoreServiceTest {
         ToolMetadataStore metadataStore = Mockito.mock(ToolMetadataStore.class);
         when(metadataStore.getAll()).thenReturn(java.util.Map.of());
 
-        vectorStoreService = new VectorStoreService(objectMapper, env, metadataStore);
+        KoreanQueryTranslator koreanTranslator = new KoreanQueryTranslator();
+        koreanTranslator.load();
+
+        vectorStoreService = new VectorStoreService(objectMapper, env, metadataStore, koreanTranslator);
 
         // 로컬 임베딩 모델 직접 생성 (테스트용)
         embeddingModel = new AllMiniLmL6V2EmbeddingModel();

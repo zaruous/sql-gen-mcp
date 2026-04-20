@@ -42,6 +42,7 @@ public class VectorStoreService {
     private final ObjectMapper objectMapper;
     private final Environment env;
     private final ToolMetadataStore metadataStore;
+    private final KoreanQueryTranslator koreanTranslator;
     private EmbeddingStore<TextSegment> embeddingStore;
     private EmbeddingModel embeddingModel;
     private volatile boolean ready = false;
@@ -56,10 +57,12 @@ public class VectorStoreService {
     @Value("${db.schema-output-dir:docs/schema}")
     private String schemaPath;
 
-    public VectorStoreService(ObjectMapper objectMapper, Environment env, ToolMetadataStore metadataStore) {
+    public VectorStoreService(ObjectMapper objectMapper, Environment env, ToolMetadataStore metadataStore,
+                              KoreanQueryTranslator koreanTranslator) {
         this.objectMapper = objectMapper;
         this.env = env;
         this.metadataStore = metadataStore;
+        this.koreanTranslator = koreanTranslator;
     }
 
     @PostConstruct
@@ -249,10 +252,14 @@ public class VectorStoreService {
                 scoreMap.merge(tName, score, Math::max);
             }
 
-            // ── 2. 벡터 유사도 검색 (영어 의미 커버) ──────────────────────
-            logger.info("[Hybrid] Vector search: '{}'", kw);
+            // ── 2. 벡터 유사도 검색 (한국어 → 영어 번역 후 임베딩) ───────
+            String vectorQuery = koreanTranslator.translate(kw);
+            if (!vectorQuery.equals(kw)) {
+                logger.info("[Hybrid] Korean translated: '{}' → '{}'", kw, vectorQuery);
+            }
+            logger.info("[Hybrid] Vector search: '{}'", vectorQuery);
             EmbeddingSearchRequest req = EmbeddingSearchRequest.builder()
-                    .queryEmbedding(embeddingModel.embed(kw).content())
+                    .queryEmbedding(embeddingModel.embed(vectorQuery).content())
                     .maxResults(maxResults * 2)
                     .minScore(0.3)
                     .build();
