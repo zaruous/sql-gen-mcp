@@ -1,6 +1,7 @@
 package com.sqlgen.mcp.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sqlgen.mcp.admin.ToolMetadataStore;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
@@ -35,8 +36,10 @@ class VectorStoreServiceTest {
         ObjectMapper objectMapper = new ObjectMapper();
         Environment env = Mockito.mock(Environment.class);
         when(env.getProperty("ai.vector-store.provider", "local")).thenReturn("local");
+        ToolMetadataStore metadataStore = Mockito.mock(ToolMetadataStore.class);
+        when(metadataStore.getAll()).thenReturn(java.util.Map.of());
 
-        vectorStoreService = new VectorStoreService(objectMapper, env);
+        vectorStoreService = new VectorStoreService(objectMapper, env, metadataStore);
 
         // 로컬 임베딩 모델 직접 생성 (테스트용)
         embeddingModel = new AllMiniLmL6V2EmbeddingModel();

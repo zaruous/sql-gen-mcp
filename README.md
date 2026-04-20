@@ -14,7 +14,9 @@ eXbuilder6 AI Studio 등 MCP 클라이언트가 데이터베이스 스키마를 
 | **Streamable HTTP Transport** | MCP 2025-03-26 신규 프로토콜. `POST /mcp` 단일 엔드포인트로 동기 응답 |
 | **SSE Transport** | MCP 2024-11-05 구 프로토콜. `GET /sse` + `POST /messages` |
 | **STDIO Transport** | Claude Desktop 등 로컬 MCP 클라이언트 연동 |
-| **VectorDB RAG** | 테이블 정의서 JSON을 임베딩하여 자연어로 최적 테이블 추천 |
+| **VectorDB RAG (하이브리드)** | 텍스트 키워드 매칭 + 벡터 유사도 병합 검색. 한국어·영어 모두 지원 |
+| **웹 관리 UI** | 브라우저에서 테이블별 가중치 설정 및 자연어 검색 테스트 (`http://localhost:7070`) |
+| **테이블 가중치 관리** | `tool-metadata.json`으로 테이블별 부스트·키워드·추가 설명 설정. MCP 도구 검색에도 반영 |
 | **멀티 DBMS** | PostgreSQL · Oracle · MSSQL 지원 |
 | **Swagger UI** | `http://localhost:7070/swagger` |
 
@@ -204,8 +206,26 @@ DB 연결
         ├─ docs/schema/tables/*.json 저장
         └─ 벡터 DB 인덱싱 (In-memory)
               └─► GET /knowledge/search?q=자연어 질문
-                    └─ 유사도 검색 → 관련 테이블 정의서 반환
+                    └─ 하이브리드 검색 → 관련 테이블 정의서 반환
 ```
+
+### 하이브리드 검색 알고리즘
+
+`search_knowledge_base` MCP 도구와 `/knowledge/search` REST API 모두 동일한 하이브리드 검색을 사용합니다.
+
+```
+점수 체계 (같은 테이블에 여러 점수가 있으면 최대값 사용)
+  ├─ 텍스트 키워드 매칭 (한국어·영어 모두 유효)
+  │     ├─ 테이블명 정확 일치      : 1.00
+  │     ├─ 테이블명 포함           : 0.90
+  │     └─ 코멘트/컬럼명/remark 포함: 0.70
+  ├─ 벡터 유사도 (영어 의미 커버)
+  │     └─ cosine × 0.85 (영어 특화 모델 보정)
+  └─ tool-metadata.json 가중치
+        └─ score × boost (키워드 매칭 시에만 적용)
+```
+
+키워드 풀(테이블명 + 코멘트 + 컬럼명 + remark)을 소문자로 구성하여 한국어 텍스트 매칭을 수행하고, 영어 의미 기반 검색은 벡터 임베딩으로 보완합니다.
 
 임베딩 제공자별 특성:
 
@@ -233,8 +253,18 @@ mvn clean package
 ```bash
 java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar
 ```
-> MCP 서버: `http://localhost:7070`
+> MCP 서버: `http://localhost:7070`  
+> 웹 관리 UI: `http://localhost:7070`  
 > Swagger: `http://localhost:7070/swagger`
+
+### 실행 — Windows (인코딩 옵션 포함)
+
+`starter.bat`을 사용하면 콘솔 인코딩과 JVM 인코딩을 UTF-8로 설정한 뒤 빌드·실행합니다.
+
+```bat
+chcp 65001 > nul
+mvn package -DskipTests && java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar
+```
 
 ### 실행 — HTTP 포트 지정
 ```bash
@@ -323,13 +353,75 @@ docker run -d \
 
 ---
 
+## 웹 관리 UI
+
+서버 실행 후 브라우저에서 `http://localhost:7070` 에 접속하면 관리 페이지를 사용할 수 있습니다.
+
+### 테이블 가중치 관리 탭
+
+- 인덱싱된 전체 테이블 목록을 테이블명·DB 코멘트·컬럼 수와 함께 표시
+- 각 테이블에 **추가 설명(extraDescription)**, **부스트 가중치(boost)**, **부스트 키워드** 설정 가능
+- 설정된 가중치는 웹 UI 자연어 검색과 **MCP 도구(`search_knowledge_base`) 모두에 반영**됨
+- 테이블명·설명·추가설명 기준 필터 + 가중치 설정 항목만 보기 옵션 제공
+
+### 자연어 검색 탭
+
+- 키워드 입력 시 하이브리드 검색 결과를 랭킹 순으로 표시
+- 각 결과에서 전체 스키마 텍스트 펼치기 가능
+- 검색 결과에서 바로 가중치 편집 가능
+
+### 메타데이터 내보내기/가져오기
+
+- 우상단 버튼으로 `tool-metadata.json` 다운로드·업로드 가능
+- 팀 간 가중치 설정 공유에 활용
+
+### 관리 REST API
+
+| Method | Endpoint | 설명 |
+|---|---|---|
+| `GET` | `/api/tools` | 테이블 목록 + 메타데이터 (페이지네이션·필터 지원) |
+| `GET` | `/api/tools/search?q=검색어` | 자연어 검색 (하이브리드) |
+| `GET` | `/api/tools/status` | 인덱싱 상태 및 테이블 수 |
+| `POST` | `/api/tools/{name}/boost` | 테이블 가중치 저장 |
+| `DELETE` | `/api/tools/{name}/boost` | 테이블 가중치 삭제 |
+| `GET` | `/api/tools/metadata/export` | `tool-metadata.json` 다운로드 |
+| `POST` | `/api/tools/metadata/import` | `tool-metadata.json` 업로드 |
+
+---
+
+## tool-metadata.json
+
+`tool-metadata.json` 파일로 테이블별 검색 가중치를 관리합니다. 서버 기동 디렉터리에 위치하며, `application.yml`의 `tool.metadata.path`로 경로를 변경할 수 있습니다.
+
+```json
+{
+  "USERS": {
+    "extraDescription": "사용자 로그인, 권한 관리에 사용",
+    "boost": 1.5,
+    "keywords": ["사용자", "로그인", "계정"]
+  },
+  "ORDER_HISTORY": {
+    "extraDescription": "",
+    "boost": 1.2,
+    "keywords": ["주문", "배송"]
+  }
+}
+```
+
+- **extraDescription**: AI가 테이블 선택 시 참고할 추가 설명
+- **boost**: 1.0 기준 배수 (1.5 → 점수 ×1.5 상향). 키워드가 쿼리에 매칭될 때에만 적용
+- **keywords**: 빈 배열이면 모든 쿼리에 부스트 적용, 값이 있으면 쿼리 포함 시에만 적용
+
+---
+
 ## 초기 설정 순서
 
 1. `application.yml` DB 정보 입력 (또는 환경변수 설정)
 2. 서버 실행
 3. `POST /db/initializeSchema` 호출 → 스키마 추출 + 벡터 인덱싱
-4. `GET /knowledge/search?q=테이블 설명` 으로 검색 확인
-5. MCP 클라이언트(AI Studio 등) 연결
+4. `http://localhost:7070` 접속 → 테이블 목록 확인 및 가중치 설정
+5. `GET /knowledge/search?q=테이블 설명` 으로 검색 확인
+6. MCP 클라이언트(AI Studio 등) 연결
 
 ---
 

@@ -8,6 +8,7 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 
+import com.sqlgen.mcp.admin.ToolAdminController;
 import com.sqlgen.mcp.service.SchemaInitService;
 
 import io.javalin.Javalin;
@@ -152,9 +153,16 @@ public class McpServer {
         }
 
         final int finalPort = port;
+        ToolAdminController toolAdminController = context.getBean(ToolAdminController.class);
+
         Javalin app = Javalin.create(config -> {
             config.jsonMapper(new io.javalin.json.JavalinJackson(sharedObjectMapper, false));
             config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()));
+            config.staticFiles.add(staticFiles -> {
+                staticFiles.hostedPath = "/";
+                staticFiles.directory  = "/static";
+                staticFiles.location   = io.javalin.http.staticfiles.Location.CLASSPATH;
+            });
             config.registerPlugin(new OpenApiPlugin(openApiConfig -> {
                 openApiConfig.withDocumentationPath("/openapi.json");
                 openApiConfig.withDefinitionConfiguration((version, definition) -> {
@@ -171,6 +179,15 @@ public class McpServer {
 
         // API Compatibility: Redirect /openapi to /openapi.json
         app.get("/openapi", ctx -> ctx.redirect("/openapi.json"));
+
+        // Admin Web UI + API
+        app.get("/api/tools",                  toolAdminController::listTools);
+        app.get("/api/tools/search",           toolAdminController::search);
+        app.get("/api/tools/status",           toolAdminController::status);
+        app.post("/api/tools/{name}/boost",    toolAdminController::setBoost);
+        app.delete("/api/tools/{name}/boost",  toolAdminController::removeBoost);
+        app.get("/api/tools/metadata/export",  toolAdminController::exportMetadata);
+        app.post("/api/tools/metadata/import", toolAdminController::importMetadata);
 
         app.get("/", mcpController::getIndex);
         app.sse("/sse", mcpController::connectSse);

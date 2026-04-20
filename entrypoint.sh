@@ -4,7 +4,7 @@
 echo "--------------------------------------------------"
 echo "Starting Schema Initialization..."
 echo "--------------------------------------------------"
-java -Dlogback.configurationFile=/app/logback.xml -cp app.jar com.sqlgen.mcp.SchemaInitApplication
+java -Dfile.encoding=UTF-8 -Dlogback.configurationFile=/app/logback.xml -cp app.jar com.sqlgen.mcp.SchemaInitApplication
 
 # 초기화 실패 시 중단 (선택 사항)
 if [ $? -ne 0 ]; then
@@ -17,4 +17,4 @@ echo "--------------------------------------------------"
 echo "Starting SQL MCP Server..."
 echo "--------------------------------------------------"
 # Docker ENTRYPOINT에서 전달된 인자($@)를 그대로 서버에 전달 (포트 번호 등)
-exec java -Dlogback.configurationFile=/app/logback.xml -jar app.jar "$@"
+exec java -Dfile.encoding=UTF-8 -Dlogback.configurationFile=/app/logback.xml -jar app.jar "$@"

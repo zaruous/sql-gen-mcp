@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQL MCP Tool Manager</title>
+  <link href="/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/css/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --boost-color: #198754;
+      --accent:      #0d6efd;
+    }
+    body { background: #f5f6fa; font-size: .9rem; }
+    .navbar-brand { font-weight: 700; font-size: 1.05rem; letter-spacing: -.3px; }
+
+    /* status dot */
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dot-ready    { background: #198754; }
+    .dot-indexing { background: #ffc107; animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* table */
+    .table th { font-size: .7rem; text-transform: uppercase; letter-spacing: .5px;
+                color: #6c757d; position: relative; }
+    .tbl-name  { font-family: monospace; font-size: .82rem; font-weight: 700; }
+    .comment-cell { font-size: .78rem; color: #444;
+                    max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .extra-cell   { font-size: .78rem; color: #1a7a4a;
+                    max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* sortable header */
+    .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    .sortable:hover { background: #e2e6ea !important; }
+    .sort-icon { font-size: .6rem; margin-left: 3px; color: #ced4da; vertical-align: middle; }
+    .sort-icon.asc  { color: var(--accent); }
+    .sort-icon.desc { color: var(--accent); }
+
+    /* resize handle */
+    .resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 5px;
+                     cursor: col-resize; z-index: 1; }
+    .resize-handle:hover, .resize-handle.dragging { background: #0d6efd44; }
+
+    /* column filter row */
+    .col-filter-row th { padding: 3px 6px; background: #f8f9fa; }
+    .col-filter { width: 100%; font-size: .7rem; padding: 2px 5px;
+                  border: 1px solid #dee2e6; border-radius: 3px; }
+    .col-filter:focus { outline: none; border-color: #86b7fe; box-shadow: 0 0 0 2px #0d6efd22; }
+
+    /* badges */
+    .boost-pill { font-size: .7rem; padding: .2em .5em; background: var(--boost-color); }
+    .kw-badge   { font-size: .67rem; padding: .12em .4em; }
+    .col-cnt    { font-size: .72rem; }
+
+    /* pagination */
+    .page-link { font-size: .78rem; padding: .22rem .5rem; }
+
+    /* search result card */
+    .result-card { border: 1px solid #dee2e6; border-left: 4px solid var(--accent); background: #fff; }
+    .result-card.boosted { border-left-color: var(--boost-color); }
+    .rank-circle { width: 24px; height: 24px; border-radius: 50%; background: var(--accent);
+                   color: #fff; font-size: .7rem; font-weight: 700;
+                   display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .schema-pre  { font-family: monospace; font-size: .73rem; background: #f8f9fa;
+                   border: 1px solid #e9ecef; border-radius: 4px; padding: 8px 10px;
+                   white-space: pre-wrap; word-break: break-all;
+                   max-height: 220px; overflow-y: auto; margin: 0; }
+
+    /* modal */
+    #import-file { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ─────────────────────────────────────────────────────────── -->
+<nav class="navbar navbar-expand navbar-dark bg-dark px-3 py-2 gap-2">
+  <span class="navbar-brand">
+    <i class="bi bi-database-gear me-2 text-warning"></i>SQL MCP Tool Manager
+  </span>
+  <div class="d-flex align-items-center ms-auto gap-2">
+    <span id="status-dot"  class="dot dot-indexing"></span>
+    <span id="status-text" class="text-white-50 small me-2">인덱싱 중...</span>
+    <button class="btn btn-sm btn-outline-light" onclick="exportMetadata()" title="가중치 데이터 다운로드">
+      <i class="bi bi-download me-1"></i>다운로드
+    </button>
+    <label for="import-file" class="btn btn-sm btn-outline-warning mb-0" title="가중치 데이터 업로드">
+      <i class="bi bi-upload me-1"></i>업로드
+    </label>
+    <input type="file" id="import-file" accept=".json" onchange="importMetadata(this)">
+  </div>
+</nav>
+
+<!-- ── Main ───────────────────────────────────────────────────────────── -->
+<div class="container-fluid py-3 px-4">
+
+  <!-- Tabs -->
+  <ul class="nav nav-tabs mb-3" id="mainTabs">
+    <li class="nav-item">
+      <a class="nav-link active" href="#" onclick="switchTab('list',this);return false;">
+        <i class="bi bi-table me-1"></i>테이블 가중치 관리
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#" onclick="switchTab('search',this);return false;">
+        <i class="bi bi-search me-1"></i>자연어 검색
+      </a>
+    </li>
+  </ul>
+
+  <!-- ══ LIST TAB ══════════════════════════════════════════════════════ -->
+  <div id="tab-list">
+
+    <!-- Filter bar -->
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <div class="input-group" style="max-width:380px">
+        <span class="input-group-text bg-white"><i class="bi bi-funnel text-muted"></i></span>
+        <input type="text" id="filter-input" class="form-control"
+               placeholder="테이블명 또는 설명으로 필터..."
+               oninput="debounceFilter()">
+        <button class="btn btn-outline-secondary" onclick="clearFilter()" title="초기화">
+          <i class="bi bi-x"></i>
+        </button>
+      </div>
+      <div class="form-check form-switch mb-0 ms-1">
+        <input class="form-check-input" type="checkbox" id="boost-only"
+               onchange="loadTools(true)">
+        <label class="form-check-label small" for="boost-only">가중치 있는 테이블만</label>
+      </div>
+      <button class="btn btn-sm btn-outline-secondary" onclick="clearColFilters()" title="컬럼 필터 초기화">
+        <i class="bi bi-funnel-fill me-1"></i>컬럼 필터 초기화
+      </button>
+      <span class="ms-auto text-muted small" id="list-summary"></span>
+    </div>
+
+    <!-- Table card -->
+    <div class="card shadow-sm mb-3">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm align-middle mb-0" id="main-table">
+          <thead class="table-light">
+            <tr id="sort-row">
+              <th style="width:48px" class="text-center">편집</th>
+              <th style="width:200px" class="sortable" onclick="sortBy('name')">
+                테이블명<i class="bi bi-arrow-down-up sort-icon" id="si-name"></i>
+                <span class="resize-handle"></span>
+              </th>
+              <th style="width:280px" class="sortable" onclick="sortBy('description')">
+                DB 설명(Comment)<i class="bi bi-arrow-down-up sort-icon" id="si-description"></i>
+                <span class="resize-handle"></span>
+              </th>
+              <th style="width:56px" class="text-center sortable" onclick="sortBy('columnCount')">
+                컬럼수<i class="bi bi-arrow-down-up sort-icon" id="si-columnCount"></i>
+                <span class="resize-handle"></span>
+              </th>
+              <th style="width:220px" class="sortable" onclick="sortBy('extraDescription')">
+                추가 설명<i class="bi bi-arrow-down-up sort-icon" id="si-extraDescription"></i>
+                <span class="resize-handle"></span>
+              </th>
+              <th style="width:160px">
+                부스트 키워드
+                <span class="resize-handle"></span>
+              </th>
+              <th style="width:72px" class="text-center sortable" onclick="sortBy('boost')">
+                가중치<i class="bi bi-arrow-down-up sort-icon" id="si-boost"></i>
+              </th>
+            </tr>
+            <!-- Column filter row -->
+            <tr class="col-filter-row">
+              <th></th>
+              <th><input class="col-filter" type="text" placeholder="테이블명..."
+                         oninput="applyColFilter('name', this.value)"></th>
+              <th><input class="col-filter" type="text" placeholder="DB 설명..."
+                         oninput="applyColFilter('description', this.value)"></th>
+              <th></th>
+              <th><input class="col-filter" type="text" placeholder="추가 설명..."
+                         oninput="applyColFilter('extraDescription', this.value)"></th>
+              <th><input class="col-filter" type="text" placeholder="키워드..."
+                         oninput="applyColFilter('keywords', this.value)"></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tool-tbody">
+            <tr><td colspan="7" class="text-center text-muted py-5">
+              <div class="spinner-border spinner-border-sm me-2"></div>불러오는 중...
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="d-flex align-items-center justify-content-between">
+      <span class="text-muted small" id="page-info"></span>
+      <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
+    </div>
+  </div>
+
+  <!-- ══ SEARCH TAB ════════════════════════════════════════════════════ -->
+  <div id="tab-search" hidden>
+    <div class="card shadow-sm p-3 mb-3">
+      <div class="input-group input-group-lg">
+        <input type="text" id="search-input" class="form-control"
+               placeholder="예: 생산 실적, 불량 이력, 설비 가동률"
+               onkeydown="if(event.key==='Enter')doSearch()">
+        <button class="btn btn-primary px-4" onclick="doSearch()">
+          <i class="bi bi-search me-1"></i>검색
+        </button>
+      </div>
+      <div class="form-text mt-1 ms-1">
+        쉼표(,)로 여러 키워드를 동시에 검색할 수 있습니다.
+      </div>
+    </div>
+    <div id="search-results"></div>
+  </div>
+
+</div>
+
+<!-- ── Edit Modal ─────────────────────────────────────────────────────── -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content shadow">
+      <div class="modal-header bg-light">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-sliders2 me-2 text-primary"></i>테이블 가중치(Boost) 설정
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <!-- 테이블 기본 정보 -->
+        <div class="row g-2 mb-3">
+          <div class="col-auto">
+            <div class="p-2 bg-light rounded h-100">
+              <span class="text-muted small d-block mb-1">테이블명</span>
+              <span class="tbl-name fs-6" id="modal-name"></span>
+            </div>
+          </div>
+          <div class="col">
+            <div class="p-2 bg-light rounded h-100">
+              <span class="text-muted small d-block mb-1">DB 설명 (Comment)</span>
+              <span id="modal-db-desc" style="font-size:.83rem;color:#333;"></span>
+            </div>
+          </div>
+          <div class="col-auto">
+            <div class="p-2 bg-light rounded h-100 text-center" style="min-width:64px">
+              <span class="text-muted small d-block mb-1">컬럼수</span>
+              <span id="modal-col-cnt" class="fw-bold" style="font-size:.9rem;"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 추가 설명 -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold" for="modal-extra">
+            추가 설명
+            <span class="text-muted fw-normal ms-1" style="font-size:.78rem;">
+              — 유사어·업무 키워드를 입력하면 임베딩 품질이 향상됩니다
+            </span>
+          </label>
+          <textarea id="modal-extra" class="form-control" rows="3"
+                    placeholder="예: 생산 실적, 작업 완료, 생산량 집계, 공정 이력"></textarea>
+        </div>
+
+        <!-- 가중치 슬라이더 -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold" for="modal-boost">
+            가중치 (Boost)
+            <span id="boost-display" class="badge bg-success ms-2">1.0×</span>
+          </label>
+          <input type="range" id="modal-boost-range" class="form-range"
+                 min="1.0" max="3.0" step="0.1" value="1.0"
+                 oninput="syncBoost(this.value)">
+          <div class="d-flex justify-content-between align-items-center">
+            <input type="number" id="modal-boost" class="form-control form-control-sm"
+                   style="width:80px" min="1.0" max="5.0" step="0.1" value="1.0"
+                   oninput="syncBoost(this.value)">
+            <span class="text-muted small">권장 1.2 ~ 1.8</span>
+          </div>
+        </div>
+
+        <!-- 부스트 키워드 -->
+        <div class="mb-2">
+          <label class="form-label fw-semibold" for="modal-keywords">
+            부스트 발동 키워드
+            <span class="badge bg-secondary ms-1">선택</span>
+          </label>
+          <input type="text" id="modal-keywords" class="form-control"
+                 placeholder="생산,실적,완료  (쉼표로 구분)">
+          <div class="form-text">
+            <i class="bi bi-info-circle me-1"></i>
+            비워두면 모든 쿼리에 항상 적용 &nbsp;/&nbsp;
+            입력하면 해당 키워드 포함 쿼리에만 발동
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-danger me-auto"
+                id="btn-delete" onclick="deleteBoost()">
+          <i class="bi bi-trash me-1"></i>삭제
+        </button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="saveBoost()">
+          <i class="bi bi-check-lg me-1"></i>저장
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ──────────────────────────────────────────────────────────── -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="toast" class="toast align-items-center text-white border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body fw-semibold" id="toast-body"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto"
+              data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/bootstrap.bundle.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════
+//  State
+// ════════════════════════════════════════════════════════════════
+const S = {
+  page: 0, size: 50, totalPages: 0,
+  filter: '', boostOnly: false,
+  editingTool: null,
+  cache: new Map(),
+  loadedTools: [],
+  sortCol: null,
+  sortDir: 'asc',
+  colFilters: {},
+};
+
+let bsModal, bsToast;
+
+document.addEventListener('DOMContentLoaded', () => {
+  bsModal = new bootstrap.Modal(document.getElementById('editModal'));
+  bsToast = new bootstrap.Toast(document.getElementById('toast'), { delay: 3000 });
+  initResize();
+  loadTools();
+  loadStatus();
+  setInterval(loadStatus, 4000);
+});
+
+// ════════════════════════════════════════════════════════════════
+//  Status
+// ════════════════════════════════════════════════════════════════
+async function loadStatus() {
+  try {
+    const d = await api.get('/api/tools/status');
+    document.getElementById('status-dot').className =
+      'dot ' + (d.ready ? 'dot-ready' : 'dot-indexing');
+    document.getElementById('status-text').textContent = d.ready
+      ? `인덱싱 완료 (${d.total.toLocaleString()}개 테이블)`
+      : `인덱싱 중... (${d.total.toLocaleString()}개)`;
+  } catch {}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Sort
+// ════════════════════════════════════════════════════════════════
+function sortBy(col) {
+  if (S.sortCol === col) {
+    S.sortDir = S.sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    S.sortCol = col;
+    S.sortDir = 'asc';
+  }
+  updateSortIcons();
+  renderFiltered();
+}
+
+function updateSortIcons() {
+  document.querySelectorAll('.sort-icon').forEach(el => {
+    el.className = 'bi bi-arrow-down-up sort-icon';
+  });
+  if (!S.sortCol) return;
+  const el = document.getElementById('si-' + S.sortCol);
+  if (!el) return;
+  el.className = S.sortDir === 'asc'
+    ? 'bi bi-arrow-up sort-icon asc'
+    : 'bi bi-arrow-down sort-icon desc';
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Column Filter
+// ════════════════════════════════════════════════════════════════
+function applyColFilter(col, val) {
+  const v = val.trim().toLowerCase();
+  if (v) S.colFilters[col] = v; else delete S.colFilters[col];
+  renderFiltered();
+}
+function clearColFilters() {
+  S.colFilters = {};
+  document.querySelectorAll('.col-filter').forEach(el => el.value = '');
+  renderFiltered();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Filtered + sorted render
+// ════════════════════════════════════════════════════════════════
+function renderFiltered() {
+  let tools = [...S.loadedTools];
+
+  for (const [col, val] of Object.entries(S.colFilters)) {
+    tools = tools.filter(t => {
+      let v = col === 'keywords' ? (t.keywords || []).join(',') : String(t[col] || '');
+      return v.toLowerCase().includes(val);
+    });
+  }
+
+  if (S.sortCol) {
+    tools.sort((a, b) => {
+      let av = a[S.sortCol] ?? '', bv = b[S.sortCol] ?? '';
+      if (typeof av === 'number' && typeof bv === 'number')
+        return S.sortDir === 'asc' ? av - bv : bv - av;
+      const cmp = String(av).localeCompare(String(bv), 'ko');
+      return S.sortDir === 'asc' ? cmp : -cmp;
+    });
+  }
+
+  renderTable(tools);
+
+  const total = S.loadedTools.length, shown = tools.length;
+  document.getElementById('list-summary').textContent =
+    Object.keys(S.colFilters).length > 0
+      ? `${shown} / ${total.toLocaleString()}개 (필터 적용)`
+      : `전체 ${total.toLocaleString()}개 테이블`;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  List Tab
+// ════════════════════════════════════════════════════════════════
+let filterTimer;
+function debounceFilter() {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(() => { S.page = 0; loadTools(); }, 280);
+}
+function clearFilter() {
+  document.getElementById('filter-input').value = '';
+  S.page = 0;
+  loadTools();
+}
+
+async function loadTools(resetPage = false) {
+  if (resetPage) S.page = 0;
+  S.filter    = document.getElementById('filter-input').value;
+  S.boostOnly = document.getElementById('boost-only').checked;
+
+  const tbody = document.getElementById('tool-tbody');
+  tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-5">
+    <div class="spinner-border spinner-border-sm me-2"></div>불러오는 중...</td></tr>`;
+
+  try {
+    const p = new URLSearchParams({
+      filter: S.filter, boostOnly: S.boostOnly, page: S.page, size: S.size
+    });
+    const d = await api.get(`/api/tools?${p}`);
+    S.totalPages  = d.totalPages;
+    S.loadedTools = d.tools;
+    d.tools.forEach(t => S.cache.set(t.name, t));
+    renderFiltered();
+    renderPagination(d);
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-4">
+      오류: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function renderTable(tools) {
+  const tbody = document.getElementById('tool-tbody');
+  if (!tools.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-5">
+      <i class="bi bi-inbox fs-3 d-block mb-2"></i>결과가 없습니다.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = tools.map(t => `
+    <tr>
+      <td class="text-center">
+        <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                onclick="openEdit('${esc(t.name)}')" title="가중치 편집">
+          <i class="bi bi-pencil-square"></i>
+        </button>
+      </td>
+      <td>
+        <span class="tbl-name">${esc(t.name)}</span>
+        ${t.hasBoost ? '<i class="bi bi-star-fill text-warning ms-1" style="font-size:.6rem" title="가중치 설정됨"></i>' : ''}
+      </td>
+      <td><span class="comment-cell" title="${esc(t.description)}">${esc(t.description) || '<span class="text-muted">-</span>'}</span></td>
+      <td class="text-center"><span class="badge bg-light text-dark border col-cnt">${t.columnCount}</span></td>
+      <td>
+        <span class="extra-cell" title="${esc(t.extraDescription || '')}">
+          ${t.extraDescription ? esc(t.extraDescription) : '<span class="text-muted">-</span>'}
+        </span>
+      </td>
+      <td>${kwBadges(t.keywords)}</td>
+      <td class="text-center">
+        ${t.hasBoost
+          ? `<span class="badge boost-pill text-white">${t.boost.toFixed(1)}×</span>`
+          : '<span class="text-muted small">-</span>'}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function kwBadges(arr) {
+  if (!arr || !arr.length) return '<span class="text-muted small">-</span>';
+  const visible = arr.slice(0, 3).map(k =>
+    `<span class="badge bg-secondary kw-badge me-1">${esc(k)}</span>`).join('');
+  const more = arr.length > 3
+    ? `<span class="text-muted" style="font-size:.68rem">+${arr.length - 3}</span>` : '';
+  return visible + more;
+}
+
+function renderPagination(d) {
+  const s = d.page * d.size + 1;
+  const e = Math.min((d.page + 1) * d.size, d.total);
+  document.getElementById('page-info').textContent =
+    `${d.total.toLocaleString()}개 중 ${s}–${e}`;
+
+  const ul = document.getElementById('pagination');
+  const items = [];
+
+  items.push(`<li class="page-item ${d.page === 0 ? 'disabled' : ''}">
+    <a class="page-link" href="#" onclick="goPage(${d.page-1});return false;"><i class="bi bi-chevron-left"></i></a></li>`);
+
+  let lo = Math.max(0, d.page - 2), hi = Math.min(d.totalPages - 1, d.page + 2);
+  if (lo > 0) items.push(`<li class="page-item disabled"><span class="page-link">…</span></li>`);
+  for (let i = lo; i <= hi; i++) {
+    items.push(`<li class="page-item ${i === d.page ? 'active' : ''}">
+      <a class="page-link" href="#" onclick="goPage(${i});return false;">${i + 1}</a></li>`);
+  }
+  if (hi < d.totalPages - 1) items.push(`<li class="page-item disabled"><span class="page-link">…</span></li>`);
+
+  items.push(`<li class="page-item ${d.page >= d.totalPages - 1 ? 'disabled' : ''}">
+    <a class="page-link" href="#" onclick="goPage(${d.page+1});return false;"><i class="bi bi-chevron-right"></i></a></li>`);
+
+  ul.innerHTML = items.join('');
+}
+
+function goPage(p) {
+  if (p < 0 || p >= S.totalPages) return;
+  S.page = p;
+  loadTools();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Column Resize
+// ════════════════════════════════════════════════════════════════
+function initResize() {
+  document.getElementById('main-table').querySelectorAll('#sort-row th').forEach(th => {
+    const handle = th.querySelector('.resize-handle');
+    if (!handle) return;
+    handle.addEventListener('mousedown', e => {
+      e.stopPropagation(); e.preventDefault();
+      handle.classList.add('dragging');
+      const startX = e.pageX, startW = th.offsetWidth;
+      const onMove = e => { th.style.width = Math.max(50, startW + e.pageX - startX) + 'px'; };
+      const onUp   = () => {
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Search Tab
+// ════════════════════════════════════════════════════════════════
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+
+  const box = document.getElementById('search-results');
+  box.innerHTML = `<div class="text-center py-5 text-muted">
+    <div class="spinner-border me-2"></div>검색 중...</div>`;
+
+  try {
+    const d = await api.get(`/api/tools/search?q=${encodeURIComponent(q)}`);
+    if (d.error) { box.innerHTML = `<div class="alert alert-warning">${esc(d.error)}</div>`; return; }
+    if (!d.results?.length) {
+      box.innerHTML = `<div class="alert alert-info">검색 결과가 없습니다.</div>`; return;
+    }
+
+    d.results.forEach(r => S.cache.set(r.tableName, { ...r, name: r.tableName }));
+
+    box.innerHTML = `
+      <p class="text-muted small mb-2">
+        "<strong>${esc(q)}</strong>" 관련 테이블 (${d.results.length}개)
+      </p>
+      ${d.results.map(r => `
+        <div class="card result-card shadow-sm mb-2 rounded-2 ${r.hasBoost ? 'boosted' : ''}">
+          <div class="card-body py-2 px-3">
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+              <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                      onclick="openEdit('${esc(r.tableName)}')" title="편집">
+                <i class="bi bi-pencil-square"></i>
+              </button>
+              <span class="rank-circle">${r.rank}</span>
+              <span class="tbl-name">${esc(r.tableName)}</span>
+              ${r.hasBoost ? `<span class="badge boost-pill text-white">${r.boost.toFixed(1)}×</span>` : ''}
+              ${r.description ? `<span class="text-muted small">${esc(r.description)}</span>` : ''}
+            </div>
+            ${r.extraDescription
+              ? `<div class="extra-cell ms-5 mt-1"><i class="bi bi-plus-circle me-1"></i>${esc(r.extraDescription)}</div>`
+              : ''}
+            ${r.keywords?.length
+              ? `<div class="ms-5 mt-1">${kwBadges(r.keywords)}</div>` : ''}
+            <details class="mt-2">
+              <summary class="text-muted" style="font-size:.74rem;cursor:pointer;user-select:none;">
+                <i class="bi bi-code-square me-1"></i>스키마 상세
+              </summary>
+              <pre class="schema-pre mt-1">${esc(r.text)}</pre>
+            </details>
+          </div>
+        </div>
+      `).join('')}
+    `;
+  } catch (e) {
+    box.innerHTML = `<div class="alert alert-danger">오류: ${esc(e.message)}</div>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Edit Modal
+// ════════════════════════════════════════════════════════════════
+function openEdit(name) {
+  const raw = S.cache.get(name) || {};
+  const t = {
+    name:             raw.name || raw.tableName || name,
+    description:      raw.description || '',
+    columnCount:      raw.columnCount ?? '-',
+    extraDescription: raw.extraDescription || '',
+    boost:            raw.boost ?? 1.0,
+    keywords:         raw.keywords || [],
+    hasBoost:         raw.hasBoost || false,
+  };
+  S.editingTool = t;
+
+  document.getElementById('modal-name').textContent    = t.name;
+  document.getElementById('modal-db-desc').textContent = t.description || '-';
+  document.getElementById('modal-col-cnt').textContent = t.columnCount;
+  document.getElementById('modal-extra').value         = t.extraDescription || '';
+
+  const bv = t.hasBoost ? t.boost : 1.0;
+  document.getElementById('modal-boost').value            = bv.toFixed(1);
+  document.getElementById('modal-boost-range').value      = bv;
+  document.getElementById('boost-display').textContent    = bv.toFixed(1) + '×';
+  document.getElementById('modal-keywords').value         = (t.keywords || []).join(',');
+  document.getElementById('btn-delete').style.display     = t.hasBoost ? '' : 'none';
+
+  bsModal.show();
+}
+
+function syncBoost(val) {
+  const v = parseFloat(val) || 1.0;
+  document.getElementById('modal-boost').value          = v.toFixed(1);
+  document.getElementById('modal-boost-range').value    = v;
+  document.getElementById('boost-display').textContent  = v.toFixed(1) + '×';
+}
+
+async function saveBoost() {
+  const name     = S.editingTool.name;
+  const extra    = document.getElementById('modal-extra').value.trim();
+  const boost    = parseFloat(document.getElementById('modal-boost').value) || 1.0;
+  const keywords = document.getElementById('modal-keywords').value
+    .split(',').map(k => k.trim()).filter(Boolean);
+  try {
+    await api.post(`/api/tools/${encodeURIComponent(name)}/boost`,
+      { extraDescription: extra, boost, keywords });
+    S.cache.set(name, { ...(S.cache.get(name) || { name }),
+      extraDescription: extra, boost, keywords, hasBoost: true });
+    bsModal.hide();
+    toast(`[${name}] 저장 완료.`, 'success');
+    loadTools();
+  } catch (e) { toast('저장 실패: ' + e.message, 'danger'); }
+}
+
+async function deleteBoost() {
+  const name = S.editingTool.name;
+  if (!confirm(`[${name}]\n가중치 데이터를 삭제하시겠습니까?`)) return;
+  try {
+    await api.del(`/api/tools/${encodeURIComponent(name)}/boost`);
+    S.cache.set(name, { ...(S.cache.get(name) || { name }),
+      extraDescription: '', boost: 1.0, keywords: [], hasBoost: false });
+    bsModal.hide();
+    toast(`[${name}] 가중치 삭제 완료.`, 'success');
+    loadTools();
+  } catch (e) { toast('삭제 실패: ' + e.message, 'danger'); }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Export / Import
+// ════════════════════════════════════════════════════════════════
+function exportMetadata() { window.location.href = '/api/tools/metadata/export'; }
+
+async function importMetadata(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm(`[${file.name}]\n기존 가중치 데이터 전체가 교체됩니다.\n업로드하시겠습니까?`)) {
+    input.value = ''; return;
+  }
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/tools/metadata/import', { method: 'POST', body: fd });
+    const d   = await res.json();
+    if (d.success) {
+      toast(`업로드 완료 — ${d.imported}개 항목 로드.`, 'success');
+      loadTools();
+    } else {
+      toast('업로드 실패: ' + (d.error || '오류'), 'danger');
+    }
+  } catch (e) { toast('업로드 오류: ' + e.message, 'danger'); }
+  finally { input.value = ''; }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Tab
+// ════════════════════════════════════════════════════════════════
+function switchTab(tab, el) {
+  document.getElementById('tab-list').hidden   = tab !== 'list';
+  document.getElementById('tab-search').hidden = tab !== 'search';
+  document.querySelectorAll('#mainTabs .nav-link').forEach(a => a.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  API helper
+// ════════════════════════════════════════════════════════════════
+const api = {
+  async get(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  async post(url, body) {
+    const r = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  async del(url) {
+    const r = await fetch(url, { method: 'DELETE' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+};
+
+// ════════════════════════════════════════════════════════════════
+//  Toast / Util
+// ════════════════════════════════════════════════════════════════
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.className = `toast align-items-center text-white border-0 bg-${type}`;
+  document.getElementById('toast-body').textContent = msg;
+  bsToast.show();
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+</script>
+</body>
+</html>
