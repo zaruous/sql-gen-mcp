@@ -223,7 +223,16 @@ public class VectorStoreService {
             return List.of();
         }
 
-        String[] keywords = query.split(",");
+        // 한국어 키워드를 영어로 번역하여 쉼표로 추가 (원문은 텍스트 매칭, 번역어는 벡터 검색에 기여)
+        StringBuilder expandedQuery = new StringBuilder(query);
+        for (String raw : query.split(",")) {
+            String translated = koreanTranslator.translate(raw.trim());
+            if (!translated.equals(raw.trim()) && !translated.isBlank()) {
+                expandedQuery.append(",").append(translated);
+                logger.info("[Hybrid] Korean expanded: '{}' → appended '{}'", raw.trim(), translated);
+            }
+        }
+        String[] keywords = expandedQuery.toString().split(",");
         // tableName → 최고 점수
         Map<String, Double> scoreMap = new LinkedHashMap<>();
 
@@ -252,14 +261,10 @@ public class VectorStoreService {
                 scoreMap.merge(tName, score, Math::max);
             }
 
-            // ── 2. 벡터 유사도 검색 (한국어 → 영어 번역 후 임베딩) ───────
-            String vectorQuery = koreanTranslator.translate(kw);
-            if (!vectorQuery.equals(kw)) {
-                logger.info("[Hybrid] Korean translated: '{}' → '{}'", kw, vectorQuery);
-            }
-            logger.info("[Hybrid] Vector search: '{}'", vectorQuery);
+            // ── 2. 벡터 유사도 검색 (영어 의미 커버) ──────────────────────
+            logger.info("[Hybrid] Vector search: '{}'", kw);
             EmbeddingSearchRequest req = EmbeddingSearchRequest.builder()
-                    .queryEmbedding(embeddingModel.embed(vectorQuery).content())
+                    .queryEmbedding(embeddingModel.embed(kw).content())
                     .maxResults(maxResults * 2)
                     .minScore(0.3)
                     .build();
