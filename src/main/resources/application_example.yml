@@ -8,7 +8,7 @@ mcp:
 ai:
   vector-store:
     # 벡터 저장 방식: local (기본, 인메모리), chroma (ChromaDB)
-    provider: chroma
+    provider: local
 
     providers:
       ollama:
@@ -38,7 +38,7 @@ sql:
 
 db:
   driver: org.postgresql.Driver
-  url: jdbc:postgresql://192.168.45.7:5433/dbmes
+  url: jdbc:postgresql://db:5432/mydb
   user: tester1
   pw: tester1
   schema-output-dir: docs/schema
