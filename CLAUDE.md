@@ -78,10 +78,9 @@ For HTTP mode, an SSE transport layer (`JavalinSseTransport`) bridges Javalin HT
 
 `VectorStoreService` loads JSON table definitions from `docs/schema/tables/`, embeds them using an `EmbeddingModel`, and stores in an in-memory `EmbeddingStore`. On search, the user query is embedded and compared via cosine similarity.
 
-Embedding provider is set in `application.yml` under `ai.vector-store.provider`:
-- `local` (default) – AllMiniLmL6V2 running in-process, no external server needed
-- `ollama` – requires a running Ollama instance
-- `vllm` – requires a vLLM API server
+Embedding store mode is set in `src/main/resources/application.yml` under `ai.vector-store.provider`:
+- `local` (default) – AllMiniLmL6V2 running in-process with in-memory storage
+- `chroma` – AllMiniLmL6V2 running in-process with ChromaDB storage
 
 ### DB-specific SQL
 

@@ -7,11 +7,8 @@ mcp:
 # RAG & Vector Store 설정
 ai:
   vector-store:
-    # 임베딩 모델 제공자: local (기본, 내장), ollama, vllm, gemini
-    provider: local
-
-    # 벡터 저장소 백엔드: inmemory (기본, 재시작 시 초기화), chroma (ChromaDB, 영구 저장)
-    backend: inmemory
+    # 벡터 저장 방식: local (기본, 인메모리), chroma (ChromaDB)
+    provider: chroma
 
     providers:
       ollama:
@@ -21,16 +18,17 @@ ai:
         base-url: "http://localhost:8000/v1"
         model-name: "your-vllm-model"
         api-key: "optional"
-      gemini:
-        api-key: "your-gemini-api-key"
-        model-name: "text-embedding-004"
 
-    # ChromaDB 백엔드 설정 (backend: chroma 일 때 사용)
-    backends:
-      chroma:
-        host: "http://localhost:8000"
-        table-collection: "sql_gen_tables"      # 테이블 스키마 임베딩 컬렉션
-        examples-collection: "sql_gen_examples" # SQL 예시 임베딩 컬렉션
+    # ChromaDB 설정 (provider: chroma 일 때 사용)
+    # Docker 예: docker run -p 18000:8000 chromadb/chroma
+    # ChromaDB 0.6.0+ 는 /api/v2/tenants/{tenant}/databases/{database}/collections 사용
+    chroma:
+      url: "http://host.docker.internal:18000"
+      collection-name: "sql-mcp-tools"
+      table-collection-name: "sql-mcp-tools"        # 테이블 스키마 임베딩 컬렉션
+      example-collection-name: "sql-mcp-examples"  # SQL 예시 임베딩 컬렉션
+      tenant: "sql_mcp_server"
+      database: "sql_mcp_server"
 
 # SQL 예시 저장 파일 경로 (기본: sql-examples.json)
 sql:

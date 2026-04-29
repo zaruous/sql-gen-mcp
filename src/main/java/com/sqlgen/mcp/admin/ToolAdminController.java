@@ -132,6 +132,8 @@ public class ToolAdminController {
     public void status(Context ctx) throws Exception {
         ctx.contentType("application/json")
            .result(objectMapper.writeValueAsString(Map.of(
+               "provider", vectorStoreService.getConfiguredProvider(),
+               "storeType", vectorStoreService.getStoreType(),
                "ready", vectorStoreService.isReady(),
                "total", vectorStoreService.getTableCount()
            )));

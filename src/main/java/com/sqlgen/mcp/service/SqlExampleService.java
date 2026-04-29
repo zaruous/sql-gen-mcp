@@ -6,11 +6,9 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -26,41 +24,30 @@ public class SqlExampleService {
 
     private final SqlExampleStore exampleStore;
     private final VectorStoreService vectorStoreService;
-    private final Environment env;
+    private final VectorStoreModeResolver modeResolver;
 
     private EmbeddingStore<TextSegment> embeddingStore;
     private EmbeddingModel embeddingModel;
+    private VectorStoreModeStrategy modeStrategy;
 
     private final Map<String, SqlExample> indexedExamples = new ConcurrentHashMap<>();
 
     public SqlExampleService(SqlExampleStore exampleStore, VectorStoreService vectorStoreService,
-                             Environment env) {
+                             VectorStoreModeResolver modeResolver) {
         this.exampleStore = exampleStore;
         this.vectorStoreService = vectorStoreService;
-        this.env = env;
+        this.modeResolver = modeResolver;
     }
 
     @PostConstruct
     public void init() {
+        // SQL 예시 검색도 같은 provider 전략을 사용해 테이블 검색과 저장소 동작을 일치시킨다.
+        this.modeStrategy = modeResolver.resolve(vectorStoreService.getEnvironment());
         this.embeddingModel = vectorStoreService.getEmbeddingModel();
-        this.embeddingStore = createEmbeddingStore();
+        logger.info("[SqlExamples] Using provider={} via strategy={}",
+                modeStrategy.provider(), modeStrategy.getClass().getSimpleName());
+        this.embeddingStore = modeStrategy.createExampleStore(vectorStoreService.getEnvironment());
         reindexAll();
-    }
-
-    private EmbeddingStore<TextSegment> createEmbeddingStore() {
-        String backend = env.getProperty("ai.vector-store.backend", "inmemory");
-        if ("chroma".equalsIgnoreCase(backend)) {
-            String prefix = "ai.vector-store.backends.chroma";
-            String host = env.getProperty(prefix + ".host", "http://localhost:8000");
-            String collection = env.getProperty(prefix + ".examples-collection", "sql_gen_examples");
-            logger.info("[SqlExamples] Using ChromaDB: {} / collection={}", host, collection);
-            return dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore.builder()
-                .baseUrl(host)
-                .collectionName(collection)
-                .build();
-        }
-        logger.info("[SqlExamples] Using InMemoryEmbeddingStore");
-        return new InMemoryEmbeddingStore<>();
     }
 
     private void reindexAll() {
@@ -70,18 +57,7 @@ public class SqlExampleService {
         }
         indexedExamples.clear();
 
-        // Clear existing embeddings: InMemory → new instance; Chroma → try removeAll
-        String backend = env.getProperty("ai.vector-store.backend", "inmemory");
-        if ("chroma".equalsIgnoreCase(backend)) {
-            try {
-                embeddingStore.removeAll();
-            } catch (Exception e) {
-                logger.warn("[SqlExamples] removeAll() unsupported, recreating store: {}", e.getMessage());
-                embeddingStore = createEmbeddingStore();
-            }
-        } else {
-            embeddingStore = new InMemoryEmbeddingStore<>();
-        }
+        embeddingStore = modeStrategy.resetExampleStore(embeddingStore, vectorStoreService.getEnvironment());
 
         List<SqlExample> all = exampleStore.getAll();
         for (SqlExample ex : all) {

@@ -12,3 +12,4 @@ db_connection.properties
 application.yml
 docs/schema
 /.claude/
+sql-examples.json

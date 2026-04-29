@@ -30,7 +30,7 @@ services:
 
   # ChromaDB 벡터 데이터베이스 (SQL 예시 및 테이블 스키마 영구 저장)
   # 실행: docker-compose --profile chroma up -d
-  # application.yml: ai.vector-store.backend=chroma 설정 필요
+  # application.yml: ai.vector-store.provider=chroma 설정 필요
   chroma:
     image: chromadb/chroma:latest
     ports:

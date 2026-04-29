@@ -8,8 +8,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
-import java.io.FileInputStream;
-import java.util.Properties;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,11 +18,6 @@ public class DatabaseConfig {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseConfig.class);
 
     private java.io.InputStream getConfigurationStream() throws java.io.IOException {
-        java.io.File externalConfig = new java.io.File("application.yml");
-        if (externalConfig.exists()) {
-            logger.info("Using external configuration from application.yml");
-            return new java.io.FileInputStream(externalConfig);
-        }
         return DatabaseConfig.class.getClassLoader().getResourceAsStream("application.yml");
     }
 

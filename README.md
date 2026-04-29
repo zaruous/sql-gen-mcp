@@ -96,6 +96,7 @@ java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
 | `get_table_schema` | 특정 테이블의 컬럼·타입·제약조건 상세 조회 | `tableName: string` |
 | `read_query` | SELECT SQL 실행 및 결과 반환 | `sql: string` |
 | `explain_query` | SQL 실행 계획(Execution Plan) 분석 | `sql: string` |
+| `search_sql_examples` | 자연어로 SQL 예시 코드 검색 | `query: string`, `topK: integer` (선택, 기본값: 5, 최대: 10) |
 | `get_table_list` | DB 전체 테이블 목록 조회 (테이블 수가 많을 경우 비권장) | 없음 |
 
 > AI가 SQL을 생성할 때 권장 순서: `search_knowledge_base` → `search_tables` → `get_table_schema` → `read_query`
@@ -131,6 +132,18 @@ java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
 | `POST` | `/schema/extract` | DB 스키마 추출 → JSON 파일 저장 |
 | `POST` | `/db/initializeSchema` | 스키마 추출 + 벡터 DB 인덱싱 |
 
+### SQL 예시 코드
+
+| Method | Endpoint | 설명 |
+|---|---|---|
+| `GET` | `/api/examples` | SQL 예시 코드 목록 조회 |
+| `POST` | `/api/examples` | SQL 예시 코드 등록 |
+| `PUT` | `/api/examples/{id}` | SQL 예시 코드 수정 |
+| `DELETE` | `/api/examples/{id}` | SQL 예시 코드 삭제 |
+| `GET` | `/api/examples/search?q=질문&topK=5` | 자연어로 SQL 예시 코드 검색 (`topK` 선택, 기본값: 5, 최대: 10) |
+| `GET` | `/api/examples/export` | SQL 예시 코드 JSON 내보내기 |
+| `POST` | `/api/examples/import` | SQL 예시 코드 JSON 가져오기 |
+
 ### MCP (직접 호출)
 
 | Method | Endpoint | 설명 |
@@ -141,7 +154,7 @@ java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
 
 ---
 
-## 설정 (application.yml)
+## 설정 (`src/main/resources/application.yml`)
 
 ```yaml
 server:
@@ -153,7 +166,15 @@ mcp:
 # VectorDB & RAG 임베딩 설정
 ai:
   vector-store:
-    provider: local   # local | ollama | vllm | gemini
+    provider: local   # local | chroma
+
+    chroma:
+      url: "http://host.docker.internal:18000"
+      collection-name: "sql-mcp-tools"
+      table-collection-name: "sql-mcp-tools"
+      example-collection-name: "sql-mcp-examples"
+      tenant: "sql_mcp_server"
+      database: "sql_mcp_server"
 
     providers:
       ollama:
@@ -163,9 +184,6 @@ ai:
         base-url: "http://localhost:8000/v1"
         model-name: "your-vllm-model"
         api-key: "optional"
-      gemini:
-        api-key: "your-gemini-api-key"
-        model-name: "text-embedding-004"
 
 # 데이터베이스 연결
 db:
@@ -227,14 +245,12 @@ DB 연결
 
 키워드 풀(테이블명 + 코멘트 + 컬럼명 + remark)을 소문자로 구성하여 한국어 텍스트 매칭을 수행하고, 영어 의미 기반 검색은 벡터 임베딩으로 보완합니다.
 
-임베딩 제공자별 특성:
+`provider` 값별 특성:
 
 | Provider | 특징 |
 |---|---|
-| `local` | 외부 서버 불필요. AllMiniLmL6V2 내장 모델 사용. 빠른 시작 |
-| `ollama` | 로컬 Ollama 서버 필요. `nomic-embed-text` 권장 |
-| `vllm` | OpenAI 호환 API를 제공하는 vLLM 서버 사용 |
-| `gemini` | Google Gemini `text-embedding-004` 사용. API 키 필요 |
+| `local` | 로컬 AllMiniLmL6V2 임베딩 + 인메모리 저장소. 빠른 시작 |
+| `chroma` | 로컬 AllMiniLmL6V2 임베딩 + ChromaDB 저장소. 영구 저장 가능 |
 
 ---
 
@@ -324,7 +340,7 @@ docker run -d \
 | `DB_USER` | DB 사용자명 | - |
 | `DB_PW` | DB 비밀번호 | - |
 
-> `application.yml`을 볼륨 마운트하거나 환경변수로 덮어쓸 수 있습니다. 환경변수가 `application.yml`보다 우선합니다.
+> 환경변수는 `src/main/resources/application.yml` 설정값보다 우선합니다.
 
 ### 컨테이너 시작 순서
 

@@ -62,14 +62,11 @@ public class McpServer {
         
         // Load application.yml into Spring Environment
         try {
-            java.io.File externalConfig = new java.io.File("application.yml");
             java.util.Properties props = new java.util.Properties();
             
             com.fasterxml.jackson.databind.ObjectMapper yamlMapper = new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
             
-            try (java.io.InputStream is = externalConfig.exists() 
-                    ? new java.io.FileInputStream(externalConfig) 
-                    : McpServer.class.getClassLoader().getResourceAsStream("application.yml")) {
+            try (java.io.InputStream is = McpServer.class.getClassLoader().getResourceAsStream("application.yml")) {
                 
                 if (is != null) {
                     com.fasterxml.jackson.databind.JsonNode root = yamlMapper.readTree(is);

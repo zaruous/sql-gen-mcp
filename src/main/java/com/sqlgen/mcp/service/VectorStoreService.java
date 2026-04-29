@@ -3,7 +3,6 @@ package com.sqlgen.mcp.service;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,13 +21,9 @@ import com.sqlgen.mcp.admin.ToolMetadataStore;
 
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.embedding.onnx.allminilml6v2.AllMiniLmL6V2EmbeddingModel;
-import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import jakarta.annotation.PostConstruct;
 
 @Service
@@ -36,6 +31,12 @@ public class VectorStoreService {
     private static final Logger logger = LoggerFactory.getLogger(VectorStoreService.class);
 
     public static int DEFAULT_SEARCH_CNT = 15;
+    private static final double PREFIX_M_BASE_BOOST = 0.10;
+    private static final double PREFIX_H_BASE_BOOST = 0.03;
+    private static final double PREFIX_D_BASE_BOOST = 0.02;
+    private static final double MASTER_INTENT_EXTRA_BOOST = 0.08;
+    private static final List<String> MASTER_INTENT_KEYWORDS =
+            List.of("마스터", "master", "기준", "기준정보", "코드", "공통", "설정", "기본정보");
 
     public record TableSummary(String tableName, String comment, int columnCount) {}
 
@@ -43,36 +44,47 @@ public class VectorStoreService {
     private final Environment env;
     private final ToolMetadataStore metadataStore;
     private final KoreanQueryTranslator koreanTranslator;
+    private final VectorStoreModeResolver modeResolver;
     private EmbeddingStore<TextSegment> embeddingStore;
     private EmbeddingModel embeddingModel;
+    private VectorStoreModeStrategy modeStrategy;
     private volatile boolean ready = false;
     private volatile int tableCount = 0;
     private final List<TableSummary> tableSummaries = new ArrayList<>();
 
     /** 테이블명 → 임베딩에 사용한 전체 텍스트 (검색 결과 반환용) */
     private final Map<String, String> tableContentText = new ConcurrentHashMap<>();
-    /** 테이블명 → 텍스트 매칭용 소문자 키워드 풀 (tableName + comment + 컬럼명 + remark) */
-    private final Map<String, String> tableKeywordText = new ConcurrentHashMap<>();
+    /** 테이블명 → 이름 자체 매칭용 텍스트 */
+    private final Map<String, String> tableNameKeywordText = new ConcurrentHashMap<>();
+    /** 테이블명 → 코멘트 매칭용 텍스트 */
+    private final Map<String, String> tableCommentKeywordText = new ConcurrentHashMap<>();
+    /** 테이블명 → 컬럼명 매칭용 텍스트 */
+    private final Map<String, String> tableColumnKeywordText = new ConcurrentHashMap<>();
+    /** 테이블명 → remark 매칭용 텍스트 */
+    private final Map<String, String> tableRemarkKeywordText = new ConcurrentHashMap<>();
 
     @Value("${db.schema-output-dir:docs/schema}")
     private String schemaPath;
 
     public VectorStoreService(ObjectMapper objectMapper, Environment env, ToolMetadataStore metadataStore,
-                              KoreanQueryTranslator koreanTranslator) {
+                              KoreanQueryTranslator koreanTranslator,
+                              VectorStoreModeResolver modeResolver) {
         this.objectMapper = objectMapper;
         this.env = env;
         this.metadataStore = metadataStore;
         this.koreanTranslator = koreanTranslator;
+        this.modeResolver = modeResolver;
     }
 
     @PostConstruct
     public void init() {
-        String provider = env.getProperty("ai.vector-store.provider", "local");
-        logger.info("Initializing VectorStore with provider: {}", provider);
-
         try {
-            this.embeddingModel = createEmbeddingModel(provider);
-            this.embeddingStore = createEmbeddingStore();
+            this.modeStrategy = modeResolver.resolve(env);
+            // provider에 따라 구현체만 바꾸고, 서비스 본문은 전략 인터페이스에만 의존한다.
+            logger.info("Initializing VectorStore with provider={} using strategy={}",
+                    modeStrategy.provider(), modeStrategy.getClass().getSimpleName());
+            this.embeddingModel = modeStrategy.createEmbeddingModel(env);
+            this.embeddingStore = modeStrategy.createTableStore(env);
             // 인덱싱은 스키마 추출 완료 후 reload()에서 수행
         } catch (Exception e) {
             logger.error("Failed to initialize VectorStore: {}", e.getMessage(), e);
@@ -83,19 +95,12 @@ public class VectorStoreService {
         logger.info("Reloading and re-indexing knowledge base from {}...", schemaPath);
         ready = false;
         try {
-            String backend = env.getProperty("ai.vector-store.backend", "inmemory");
-            if ("chroma".equalsIgnoreCase(backend)) {
-                try {
-                    this.embeddingStore.removeAll();
-                } catch (Exception e) {
-                    logger.warn("ChromaDB removeAll() failed, recreating store: {}", e.getMessage());
-                    this.embeddingStore = createEmbeddingStore();
-                }
-            } else {
-                this.embeddingStore = new InMemoryEmbeddingStore<>();
-            }
+            this.embeddingStore = modeStrategy.resetTableStore(this.embeddingStore, env);
             tableContentText.clear();
-            tableKeywordText.clear();
+            tableNameKeywordText.clear();
+            tableCommentKeywordText.clear();
+            tableColumnKeywordText.clear();
+            tableRemarkKeywordText.clear();
             loadAndIndexDocs();
         } catch (Exception e) {
             logger.error("Failed to reload VectorStore: {}", e.getMessage(), e);
@@ -106,48 +111,9 @@ public class VectorStoreService {
     public int getTableCount() { return tableCount; }
     public List<TableSummary> getTableSummaries() { return List.copyOf(tableSummaries); }
     public EmbeddingModel getEmbeddingModel() { return embeddingModel; }
-
-    private EmbeddingStore<TextSegment> createEmbeddingStore() {
-        String backend = env.getProperty("ai.vector-store.backend", "inmemory");
-        if ("chroma".equalsIgnoreCase(backend)) {
-            String prefix = "ai.vector-store.backends.chroma";
-            String host = env.getProperty(prefix + ".host", "http://localhost:8000");
-            String collection = env.getProperty(prefix + ".table-collection", "sql_gen_tables");
-            logger.info("Using ChromaDB for table embeddings: {} / collection={}", host, collection);
-            return dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore.builder()
-                .baseUrl(host)
-                .collectionName(collection)
-                .build();
-        }
-        logger.info("Using InMemoryEmbeddingStore for table embeddings");
-        return new InMemoryEmbeddingStore<>();
-    }
-
-    private EmbeddingModel createEmbeddingModel(String provider) {
-        String prefix = "ai.vector-store.providers." + provider;
-        
-        switch (provider.toLowerCase()) {
-            case "local":
-                logger.info("Using In-Process Embedding Model (AllMiniLmL6V2)...");
-                return new AllMiniLmL6V2EmbeddingModel();
-
-            case "ollama":
-                return OllamaEmbeddingModel.builder()
-                        .baseUrl(env.getProperty(prefix + ".base-url", "http://localhost:11434"))
-                        .modelName(env.getProperty(prefix + ".model-name", "nomic-embed-text"))
-                        .build();
-
-            case "vllm":
-                return OpenAiEmbeddingModel.builder()
-                        .baseUrl(env.getProperty(prefix + ".base-url"))
-                        .apiKey(env.getProperty(prefix + ".api-key", "no-key"))
-                        .modelName(env.getProperty(prefix + ".model-name"))
-                        .build();
-
-            default:
-                throw new IllegalArgumentException("Unsupported embedding provider: " + provider);
-        }
-    }
+    public Environment getEnvironment() { return env; }
+    public String getConfiguredProvider() { return modeStrategy.provider(); }
+    public String getStoreType() { return modeStrategy.storeType(); }
 
     private void loadAndIndexDocs() throws Exception {
     	File dir = new File(schemaPath, "tables");
@@ -165,7 +131,10 @@ public class VectorStoreService {
         tableCount = 0;
         tableSummaries.clear();
         tableContentText.clear();
-        tableKeywordText.clear();
+        tableNameKeywordText.clear();
+        tableCommentKeywordText.clear();
+        tableColumnKeywordText.clear();
+        tableRemarkKeywordText.clear();
 
         for (File file : listFiles) {
             logger.info("Indexing tables from {}...", file.getAbsolutePath());
@@ -181,10 +150,11 @@ public class VectorStoreService {
             content.append("Description: ").append(comment).append("\n");
             content.append("Columns:\n");
 
-            // 텍스트 매칭용 키워드 풀 구성 (소문자)
-            StringBuilder kwPool = new StringBuilder();
-            kwPool.append(tableName.toLowerCase()).append(" ");
-            kwPool.append(comment.toLowerCase()).append(" ");
+            // 검색 시 이름/코멘트/컬럼/remark에 서로 다른 가중치를 주기 위해 분리 저장한다.
+            String nameKeyword = tableName.toLowerCase();
+            String commentKeyword = comment.toLowerCase();
+            StringBuilder columnKeyword = new StringBuilder();
+            StringBuilder remarkKeyword = new StringBuilder();
 
             JsonNode columns = root.path("columns");
             if (columns.isArray()) {
@@ -201,14 +171,17 @@ public class VectorStoreService {
                     }
                     content.append("\n");
 
-                    kwPool.append(colName.toLowerCase()).append(" ");
-                    kwPool.append(colRemark.toLowerCase()).append(" ");
+                    columnKeyword.append(colName.toLowerCase()).append(" ");
+                    remarkKeyword.append(colRemark.toLowerCase()).append(" ");
                 }
             }
 
             segments.add(TextSegment.from(content.toString()));
             tableContentText.put(tableName, content.toString());
-            tableKeywordText.put(tableName, kwPool.toString());
+            tableNameKeywordText.put(tableName, nameKeyword);
+            tableCommentKeywordText.put(tableName, commentKeyword);
+            tableColumnKeywordText.put(tableName, columnKeyword.toString());
+            tableRemarkKeywordText.put(tableName, remarkKeyword.toString());
 
             int colCount = columns.isArray() ? columns.size() : 0;
             tableSummaries.add(new TableSummary(tableName, comment, colCount));
@@ -262,6 +235,8 @@ public class VectorStoreService {
         String[] keywords = expandedQuery.toString().split(",");
         // tableName → 최고 점수
         Map<String, Double> scoreMap = new LinkedHashMap<>();
+        // "마스터/기준/코드" 계열 질의는 M-prefix 테이블에 추가 가산점을 준다.
+        boolean masterIntent = hasMasterIntent(keywords);
 
         for (String raw : keywords) {
             String kw    = raw.trim();
@@ -269,23 +244,11 @@ public class VectorStoreService {
             if (kwLow.isEmpty()) continue;
 
             // ── 1. 텍스트 키워드 매칭 (한국어 친화적) ──────────────────────
-            for (Map.Entry<String, String> entry : tableKeywordText.entrySet()) {
-                String tName = entry.getKey();
-                String pool  = entry.getValue(); // 소문자 키워드 풀
-
-                if (!pool.contains(kwLow)) continue;
-
-                double score;
-                String nameLow = tName.toLowerCase();
-                if (nameLow.equals(kwLow)) {
-                    score = 1.00;
-                } else if (nameLow.contains(kwLow)) {
-                    score = 0.90;
-                } else {
-                    // comment / 컬럼명 / remark 에서 매칭
-                    score = 0.70;
+            for (String tName : tableNameKeywordText.keySet()) {
+                double textScore = calculateTextScore(tName, kwLow);
+                if (textScore > 0) {
+                    scoreMap.merge(tName, textScore, Math::max);
                 }
-                scoreMap.merge(tName, score, Math::max);
             }
 
             // ── 2. 벡터 유사도 검색 (영어 의미 커버) ──────────────────────
@@ -326,7 +289,10 @@ public class VectorStoreService {
             });
         }
 
-        // ── 4. 점수 내림차순 정렬 후 반환 ─────────────────────────────────
+        // ── 4. prefix / 의도 기반 가산점 적용 ──────────────────────────────
+        scoreMap.replaceAll((tableName, score) -> score + calculatePrefixBoost(tableName, masterIntent));
+
+        // ── 5. 점수 내림차순 정렬 후 반환 ─────────────────────────────────
         List<String> result = scoreMap.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .limit(maxResults)
@@ -344,6 +310,61 @@ public class VectorStoreService {
         }
 
         return result;
+    }
+
+    private double calculateTextScore(String tableName, String keywordLower) {
+        String nameLow = tableNameKeywordText.getOrDefault(tableName, "");
+        String commentLow = tableCommentKeywordText.getOrDefault(tableName, "");
+        String columnLow = tableColumnKeywordText.getOrDefault(tableName, "");
+        String remarkLow = tableRemarkKeywordText.getOrDefault(tableName, "");
+
+        // 테이블명 > 컬럼명 > 코멘트 > remark 순으로 신뢰도를 다르게 본다.
+        if (nameLow.equals(keywordLower)) {
+            return 1.20;
+        }
+        if (nameLow.contains(keywordLower)) {
+            return 1.00;
+        }
+        if (columnLow.contains(keywordLower)) {
+            return 0.85;
+        }
+        if (commentLow.contains(keywordLower)) {
+            return 0.72;
+        }
+        if (remarkLow.contains(keywordLower)) {
+            return 0.65;
+        }
+        return 0.0;
+    }
+
+    private boolean hasMasterIntent(String[] keywords) {
+        for (String keyword : keywords) {
+            String lowered = keyword.trim().toLowerCase();
+            if (lowered.isEmpty()) continue;
+            for (String intent : MASTER_INTENT_KEYWORDS) {
+                if (lowered.contains(intent.toLowerCase())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private double calculatePrefixBoost(String tableName, boolean masterIntent) {
+        String upper = tableName.toUpperCase();
+        double boost = 0.0;
+        if (upper.startsWith("M")) {
+            // M-prefix는 master성 테이블이라는 도메인 가정을 기본 점수로 반영한다.
+            boost += PREFIX_M_BASE_BOOST;
+            if (masterIntent) {
+                boost += MASTER_INTENT_EXTRA_BOOST;
+            }
+        } else if (upper.startsWith("H")) {
+            boost += PREFIX_H_BASE_BOOST;
+        } else if (upper.startsWith("D")) {
+            boost += PREFIX_D_BASE_BOOST;
+        }
+        return boost;
     }
 
     private List<EmbeddingMatch<TextSegment>> searchMatches(String query, int maxResults) {
