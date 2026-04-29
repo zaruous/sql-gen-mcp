@@ -30,10 +30,11 @@ ai:
       tenant: "sql_mcp_server"
       database: "sql_mcp_server"
 
-# SQL 예시 저장 파일 경로 (기본: sql-examples.json)
+# SQL 예시 저장 파일 경로
+# Docker: /app/data 가 named volume(sql-gen-mcp-data)으로 마운트됨
 sql:
   examples:
-    path: "sql-examples.json"
+    path: "data/sql-examples.json"
 
 db:
   driver: org.postgresql.Driver

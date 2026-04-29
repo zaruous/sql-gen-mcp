@@ -91,6 +91,9 @@
   <div class="d-flex align-items-center ms-auto gap-2">
     <span id="status-dot"  class="dot dot-indexing"></span>
     <span id="status-text" class="text-white-50 small me-2">인덱싱 중...</span>
+    <button id="btn-reindex" class="btn btn-sm btn-outline-info" onclick="reindex()" title="스키마 추출 후 전체 재임베딩">
+      <i class="bi bi-arrow-repeat me-1"></i>재인덱싱
+    </button>
     <button class="btn btn-sm btn-outline-light" onclick="exportMetadata()" title="가중치 데이터 다운로드">
       <i class="bi bi-download me-1"></i>다운로드
     </button>
@@ -812,6 +815,31 @@ async function deleteBoost() {
 // ════════════════════════════════════════════════════════════════
 //  Export / Import
 // ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+//  Re-index
+// ════════════════════════════════════════════════════════════════
+async function reindex() {
+  if (!confirm('스키마를 다시 추출하고 전체 재임베딩을 실행합니다.\n완료까지 수십 초가 걸릴 수 있습니다.\n진행하시겠습니까?')) return;
+  const btn = document.getElementById('btn-reindex');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>처리 중...';
+  try {
+    const res = await fetch('/db/initializeSchema', { method: 'POST' });
+    if (res.ok) {
+      toast('재인덱싱이 완료되었습니다.', 'success');
+      loadTools();
+    } else {
+      const msg = await res.text();
+      toast('재인덱싱 실패: ' + (msg || res.status), 'danger');
+    }
+  } catch (e) {
+    toast('재인덱싱 오류: ' + e.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>재인덱싱';
+  }
+}
+
 function exportMetadata() { window.location.href = '/api/tools/metadata/export'; }
 
 async function importMetadata(input) {

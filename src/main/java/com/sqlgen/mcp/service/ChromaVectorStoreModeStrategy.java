@@ -53,11 +53,12 @@ public class ChromaVectorStoreModeStrategy implements VectorStoreModeStrategy {
 
     private EmbeddingStore<TextSegment> buildStore(Environment env, String collectionSuffix, String defaultCollection) {
         // 테이블 검색과 SQL 예시 검색은 컬렉션만 다르고 연결 파라미터는 동일하다.
-        String url = env.getProperty(PREFIX + ".url", "http://localhost:18000");
+        // 환경변수(CHROMA_URL 등)가 application.yml보다 우선 적용된다 — 외부 ChromaDB 연결 시 사용.
+        String url      = getEnvOrProp("CHROMA_URL",      env, PREFIX + ".url",      "http://localhost:18000");
+        String tenant   = getEnvOrProp("CHROMA_TENANT",   env, PREFIX + ".tenant",   "default_tenant");
+        String database = getEnvOrProp("CHROMA_DATABASE", env, PREFIX + ".database", "default_database");
         String collection = env.getProperty(PREFIX + collectionSuffix,
                 env.getProperty(PREFIX + ".collection-name", defaultCollection));
-        String tenant = env.getProperty(PREFIX + ".tenant", "default_tenant");
-        String database = env.getProperty(PREFIX + ".database", "default_database");
         return ChromaEmbeddingStore.builder()
                 .apiVersion(ChromaApiVersion.V2)
                 .baseUrl(url)
@@ -65,6 +66,12 @@ public class ChromaVectorStoreModeStrategy implements VectorStoreModeStrategy {
                 .databaseName(database)
                 .collectionName(collection)
                 .build();
+    }
+
+    private String getEnvOrProp(String envKey, Environment env, String propKey, String defaultValue) {
+        String envVal = System.getenv(envKey);
+        if (envVal != null && !envVal.isBlank()) return envVal;
+        return env.getProperty(propKey, defaultValue);
     }
 
     private EmbeddingStore<TextSegment> clearOrRecreate(EmbeddingStore<TextSegment> currentStore,

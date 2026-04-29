@@ -27,7 +27,7 @@ COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh && \
     sed -i 's/\r$//' /app/entrypoint.sh
 
-RUN mkdir -p docs/schema
+RUN mkdir -p docs/schema data
 
 EXPOSE 8081 7070
 

@@ -1,4 +1,9 @@
 {
+  "mwipmatdef" : {
+    "extraDescription" : "",
+    "boost" : 1.0,
+    "keywords" : [ "자재", "제품" ]
+  },
   "mwipoprdef" : {
     "extraDescription" : "OPER,공정,Operation,oper",
     "boost" : 1.2,

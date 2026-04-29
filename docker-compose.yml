@@ -4,15 +4,17 @@ services:
     ports:
       - "8081:8081"
       - "7070:7070"
+    environment:
+      # 외부 ChromaDB 연결 정보 (application.yml 값보다 우선 적용)
+      - CHROMA_URL=http://your-chroma-host:8000
+      - CHROMA_TENANT=default_tenant
+      - CHROMA_DATABASE=default_database
     volumes:
-      - ./docs/schema:/app/docs/schema
-      - ./sql-examples.json:/app/sql-examples.json
+      - sql-gen-mcp-schema:/app/docs/schema
+      - sql-gen-mcp-data:/app/data
     depends_on:
       db:
         condition: service_healthy
-      # ChromaDB 사용 시 아래 주석 해제
-      # chroma:
-      #   condition: service_healthy
 
   db:
     image: postgres:16-alpine
@@ -22,31 +24,15 @@ services:
       POSTGRES_PASSWORD: tester1
     ports:
       - "5432:5432"
+    volumes:
+      - sql-gen-mcp-db:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tester1 -d dbmes"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # ChromaDB 벡터 데이터베이스 (SQL 예시 및 테이블 스키마 영구 저장)
-  # 실행: docker-compose --profile chroma up -d
-  # application.yml: ai.vector-store.provider=chroma 설정 필요
-  chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8000:8000"
-    volumes:
-      - chroma-data:/chroma/chroma
-    environment:
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/heartbeat || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    profiles:
-      - chroma
-
 volumes:
-  chroma-data:
+  sql-gen-mcp-schema:
+  sql-gen-mcp-data:
+  sql-gen-mcp-db:
