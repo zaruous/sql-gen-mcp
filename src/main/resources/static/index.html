@@ -68,6 +68,17 @@
 
     /* modal */
     #import-file { display: none; }
+
+    /* SQL Examples tab */
+    .ex-card { border: 1px solid #dee2e6; border-left: 4px solid #6f42c1; background: #fff; }
+    .ex-card.search-result { border-left-color: #0d6efd; }
+    .sql-pre  { font-family: monospace; font-size: .75rem; background: #1e1e2e;
+                color: #cdd6f4; border-radius: 4px; padding: 10px 12px;
+                white-space: pre-wrap; word-break: break-all;
+                max-height: 260px; overflow-y: auto; margin: 0; }
+    .tag-badge { font-size: .66rem; padding: .1em .38em; background: #6f42c1; }
+    .category-badge { font-size: .68rem; background: #0dcaf0; color: #000; }
+    #ex-import-file { display: none; }
   </style>
 </head>
 <body>
@@ -103,6 +114,12 @@
     <li class="nav-item">
       <a class="nav-link" href="#" onclick="switchTab('search',this);return false;">
         <i class="bi bi-search me-1"></i>자연어 검색
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#" onclick="switchTab('examples',this);return false;">
+        <i class="bi bi-code-slash me-1"></i>SQL 예시 관리
+        <span class="badge bg-purple ms-1" id="ex-count-badge" style="background:#6f42c1;font-size:.65rem;"></span>
       </a>
     </li>
   </ul>
@@ -192,6 +209,43 @@
       <span class="text-muted small" id="page-info"></span>
       <nav><ul class="pagination pagination-sm mb-0" id="pagination"></ul></nav>
     </div>
+  </div>
+
+  <!-- ══ EXAMPLES TAB ══════════════════════════════════════════════════ -->
+  <div id="tab-examples" hidden>
+
+    <!-- 상단 도구 모음 -->
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <button class="btn btn-sm btn-purple" style="background:#6f42c1;color:#fff;border:none;"
+              onclick="openExampleModal(null)">
+        <i class="bi bi-plus-lg me-1"></i>새 예시 추가
+      </button>
+      <div class="input-group" style="max-width:360px">
+        <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+        <input type="text" id="ex-search-input" class="form-control"
+               placeholder="예시 검색 (자연어)..."
+               onkeydown="if(event.key==='Enter')doExSearch()">
+        <button class="btn btn-outline-secondary" onclick="doExSearch()">검색</button>
+        <button class="btn btn-outline-secondary" onclick="clearExSearch()" title="검색 초기화">
+          <i class="bi bi-x"></i>
+        </button>
+      </div>
+      <span class="ms-auto text-muted small" id="ex-list-summary"></span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="exportExamples()" title="예시 내보내기">
+        <i class="bi bi-download me-1"></i>내보내기
+      </button>
+      <label for="ex-import-file" class="btn btn-sm btn-outline-warning mb-0" title="예시 가져오기">
+        <i class="bi bi-upload me-1"></i>가져오기
+      </label>
+      <input type="file" id="ex-import-file" accept=".json" onchange="importExamples(this)">
+    </div>
+
+    <!-- 예시 목록 -->
+    <div id="ex-list-container"></div>
+
+    <!-- 검색 결과 -->
+    <div id="ex-search-results" hidden></div>
+
   </div>
 
   <!-- ══ SEARCH TAB ════════════════════════════════════════════════════ -->
@@ -307,6 +361,64 @@
   </div>
 </div>
 
+<!-- ── SQL Example Modal ──────────────────────────────────────────────── -->
+<div class="modal fade" id="exampleModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content shadow">
+      <div class="modal-header" style="background:#6f42c1;">
+        <h6 class="modal-title fw-bold text-white">
+          <i class="bi bi-code-slash me-2"></i><span id="ex-modal-title">SQL 예시 추가</span>
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="ex-modal-id">
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">제목 <span class="text-danger">*</span></label>
+            <input type="text" id="ex-modal-title-input" class="form-control"
+                   placeholder="예: 월별 주문 집계 쿼리">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">분류 (Category)</label>
+            <input type="text" id="ex-modal-category" class="form-control"
+                   placeholder="예: 집계, 조회, 분석">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">태그 (쉼표 구분)</label>
+            <input type="text" id="ex-modal-tags" class="form-control"
+                   placeholder="예: 주문,집계,월별">
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">설명</label>
+          <textarea id="ex-modal-description" class="form-control" rows="2"
+                    placeholder="이 SQL 예시가 어떤 업무에 사용되는지 설명하세요."></textarea>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label fw-semibold">SQL <span class="text-danger">*</span></label>
+          <textarea id="ex-modal-sql" class="form-control font-monospace" rows="10"
+                    placeholder="SELECT ..." style="font-size:.82rem;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-danger me-auto"
+                id="ex-btn-delete" onclick="deleteExample()" style="display:none;">
+          <i class="bi bi-trash me-1"></i>삭제
+        </button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" onclick="saveExample()"
+                style="background:#6f42c1;border-color:#6f42c1;">
+          <i class="bi bi-check-lg me-1"></i>저장
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Toast ──────────────────────────────────────────────────────────── -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
   <div id="toast" class="toast align-items-center text-white border-0" role="alert">
@@ -334,11 +446,12 @@ const S = {
   colFilters: {},
 };
 
-let bsModal, bsToast;
+let bsModal, bsToast, bsExModal;
 
 document.addEventListener('DOMContentLoaded', () => {
-  bsModal = new bootstrap.Modal(document.getElementById('editModal'));
-  bsToast = new bootstrap.Toast(document.getElementById('toast'), { delay: 3000 });
+  bsModal   = new bootstrap.Modal(document.getElementById('editModal'));
+  bsExModal = new bootstrap.Modal(document.getElementById('exampleModal'));
+  bsToast   = new bootstrap.Toast(document.getElementById('toast'), { delay: 3000 });
   initResize();
   loadTools();
   loadStatus();
@@ -726,10 +839,194 @@ async function importMetadata(input) {
 //  Tab
 // ════════════════════════════════════════════════════════════════
 function switchTab(tab, el) {
-  document.getElementById('tab-list').hidden   = tab !== 'list';
-  document.getElementById('tab-search').hidden = tab !== 'search';
+  document.getElementById('tab-list').hidden     = tab !== 'list';
+  document.getElementById('tab-search').hidden   = tab !== 'search';
+  document.getElementById('tab-examples').hidden = tab !== 'examples';
   document.querySelectorAll('#mainTabs .nav-link').forEach(a => a.classList.remove('active'));
   el.classList.add('active');
+  if (tab === 'examples') loadExamples();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  SQL Examples Tab
+// ════════════════════════════════════════════════════════════════
+let exExamples = [];
+let exSearchMode = false;
+
+async function loadExamples() {
+  try {
+    exExamples = await api.get('/api/examples');
+    exSearchMode = false;
+    document.getElementById('ex-search-results').hidden = true;
+    document.getElementById('ex-list-container').hidden = false;
+    renderExamples(exExamples);
+    const badge = document.getElementById('ex-count-badge');
+    badge.textContent = exExamples.length || '';
+    document.getElementById('ex-list-summary').textContent = `전체 ${exExamples.length}개 예시`;
+  } catch (e) {
+    document.getElementById('ex-list-container').innerHTML =
+      `<div class="alert alert-danger">오류: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderExamples(list) {
+  const box = document.getElementById('ex-list-container');
+  if (!list.length) {
+    box.innerHTML = `
+      <div class="text-center py-5 text-muted">
+        <i class="bi bi-code-slash fs-1 d-block mb-3" style="color:#6f42c1;opacity:.4;"></i>
+        <p class="mb-2">등록된 SQL 예시가 없습니다.</p>
+        <button class="btn btn-sm btn-outline-secondary" onclick="openExampleModal(null)">
+          <i class="bi bi-plus-lg me-1"></i>첫 예시 추가하기
+        </button>
+      </div>`;
+    return;
+  }
+  box.innerHTML = list.map(ex => exCard(ex, false)).join('');
+}
+
+function exCard(ex, isSearchResult, score) {
+  const tags = (ex.tags || []).map(t =>
+    `<span class="badge tag-badge text-white me-1">${esc(t)}</span>`).join('');
+  const cat = ex.category
+    ? `<span class="badge category-badge me-2">${esc(ex.category)}</span>` : '';
+  const scoreHtml = isSearchResult && score != null
+    ? `<span class="badge bg-secondary ms-1" style="font-size:.65rem;">score: ${score.toFixed(2)}</span>` : '';
+  return `
+    <div class="card ex-card ${isSearchResult ? 'search-result' : ''} shadow-sm mb-2 rounded-2">
+      <div class="card-body py-2 px-3">
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+          <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                  onclick="openExampleModal(${JSON.stringify(ex).replace(/"/g,'&quot;')})"
+                  title="편집">
+            <i class="bi bi-pencil-square"></i>
+          </button>
+          ${cat}
+          <strong style="font-size:.88rem;">${esc(ex.title)}</strong>
+          ${scoreHtml}
+          <span class="ms-auto text-muted" style="font-size:.7rem;">${ex.updatedAt ? ex.updatedAt.substring(0,10) : ''}</span>
+        </div>
+        ${ex.description ? `<p class="mb-1 text-muted" style="font-size:.78rem;">${esc(ex.description)}</p>` : ''}
+        ${tags ? `<div class="mb-2">${tags}</div>` : ''}
+        <details>
+          <summary class="text-muted" style="font-size:.74rem;cursor:pointer;user-select:none;">
+            <i class="bi bi-code me-1"></i>SQL 보기
+          </summary>
+          <pre class="sql-pre mt-1">${esc(ex.sql)}</pre>
+        </details>
+      </div>
+    </div>`;
+}
+
+function openExampleModal(ex) {
+  const isNew = ex === null;
+  document.getElementById('ex-modal-title').textContent = isNew ? 'SQL 예시 추가' : 'SQL 예시 편집';
+  document.getElementById('ex-modal-id').value            = isNew ? '' : ex.id;
+  document.getElementById('ex-modal-title-input').value   = isNew ? '' : (ex.title || '');
+  document.getElementById('ex-modal-category').value      = isNew ? '' : (ex.category || '');
+  document.getElementById('ex-modal-tags').value          = isNew ? '' : (ex.tags || []).join(',');
+  document.getElementById('ex-modal-description').value   = isNew ? '' : (ex.description || '');
+  document.getElementById('ex-modal-sql').value           = isNew ? '' : (ex.sql || '');
+  document.getElementById('ex-btn-delete').style.display  = isNew ? 'none' : '';
+  bsExModal.show();
+}
+
+async function saveExample() {
+  const id          = document.getElementById('ex-modal-id').value.trim();
+  const title       = document.getElementById('ex-modal-title-input').value.trim();
+  const category    = document.getElementById('ex-modal-category').value.trim();
+  const tagsRaw     = document.getElementById('ex-modal-tags').value;
+  const description = document.getElementById('ex-modal-description').value.trim();
+  const sql         = document.getElementById('ex-modal-sql').value.trim();
+  const tags        = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+
+  if (!title) { toast('제목을 입력하세요.', 'warning'); return; }
+  if (!sql)   { toast('SQL을 입력하세요.', 'warning'); return; }
+
+  const body = { title, description, sql, category, tags };
+  try {
+    if (id) {
+      await api.put(`/api/examples/${encodeURIComponent(id)}`, body);
+      toast('예시가 수정되었습니다.', 'success');
+    } else {
+      await api.post('/api/examples', body);
+      toast('예시가 추가되었습니다.', 'success');
+    }
+    bsExModal.hide();
+    loadExamples();
+  } catch (e) { toast('저장 실패: ' + e.message, 'danger'); }
+}
+
+async function deleteExample() {
+  const id = document.getElementById('ex-modal-id').value.trim();
+  if (!id) return;
+  if (!confirm('이 SQL 예시를 삭제하시겠습니까?')) return;
+  try {
+    await api.del(`/api/examples/${encodeURIComponent(id)}`);
+    toast('예시가 삭제되었습니다.', 'success');
+    bsExModal.hide();
+    loadExamples();
+  } catch (e) { toast('삭제 실패: ' + e.message, 'danger'); }
+}
+
+async function doExSearch() {
+  const q = document.getElementById('ex-search-input').value.trim();
+  if (!q) { clearExSearch(); return; }
+
+  const resultBox = document.getElementById('ex-search-results');
+  const listBox   = document.getElementById('ex-list-container');
+  resultBox.hidden = false;
+  listBox.hidden   = true;
+  exSearchMode     = true;
+  resultBox.innerHTML = `<div class="text-center py-4 text-muted">
+    <div class="spinner-border spinner-border-sm me-2"></div>검색 중...</div>`;
+
+  try {
+    const d = await api.get(`/api/examples/search?q=${encodeURIComponent(q)}&topK=10`);
+    if (!d.results?.length) {
+      resultBox.innerHTML = `<div class="alert alert-info">검색 결과가 없습니다.</div>`;
+      return;
+    }
+    document.getElementById('ex-list-summary').textContent =
+      `"${q}" 검색 결과 ${d.results.length}개`;
+    resultBox.innerHTML = d.results.map(r =>
+      exCard(r, true, r.score)
+    ).join('');
+  } catch (e) {
+    resultBox.innerHTML = `<div class="alert alert-danger">오류: ${esc(e.message)}</div>`;
+  }
+}
+
+function clearExSearch() {
+  document.getElementById('ex-search-input').value = '';
+  document.getElementById('ex-search-results').hidden = true;
+  document.getElementById('ex-list-container').hidden = false;
+  exSearchMode = false;
+  renderExamples(exExamples);
+  document.getElementById('ex-list-summary').textContent = `전체 ${exExamples.length}개 예시`;
+}
+
+function exportExamples() { window.location.href = '/api/examples/export'; }
+
+async function importExamples(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm(`[${file.name}]\n기존 예시 전체가 교체됩니다. 가져오시겠습니까?`)) {
+    input.value = ''; return;
+  }
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/examples/import', { method: 'POST', body: fd });
+    const d   = await res.json();
+    if (d.success) {
+      toast(`가져오기 완료 — ${d.imported}개 예시 로드.`, 'success');
+      loadExamples();
+    } else {
+      toast('가져오기 실패: ' + (d.error || '오류'), 'danger');
+    }
+  } catch (e) { toast('가져오기 오류: ' + e.message, 'danger'); }
+  finally { input.value = ''; }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -744,6 +1041,14 @@ const api = {
   async post(url, body) {
     const r = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  async put(url, body) {
+    const r = await fetch(url, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);

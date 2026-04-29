@@ -72,7 +72,7 @@ public class VectorStoreService {
 
         try {
             this.embeddingModel = createEmbeddingModel(provider);
-            this.embeddingStore = new InMemoryEmbeddingStore<>();
+            this.embeddingStore = createEmbeddingStore();
             // 인덱싱은 스키마 추출 완료 후 reload()에서 수행
         } catch (Exception e) {
             logger.error("Failed to initialize VectorStore: {}", e.getMessage(), e);
@@ -83,7 +83,17 @@ public class VectorStoreService {
         logger.info("Reloading and re-indexing knowledge base from {}...", schemaPath);
         ready = false;
         try {
-            this.embeddingStore = new InMemoryEmbeddingStore<>();
+            String backend = env.getProperty("ai.vector-store.backend", "inmemory");
+            if ("chroma".equalsIgnoreCase(backend)) {
+                try {
+                    this.embeddingStore.removeAll();
+                } catch (Exception e) {
+                    logger.warn("ChromaDB removeAll() failed, recreating store: {}", e.getMessage());
+                    this.embeddingStore = createEmbeddingStore();
+                }
+            } else {
+                this.embeddingStore = new InMemoryEmbeddingStore<>();
+            }
             tableContentText.clear();
             tableKeywordText.clear();
             loadAndIndexDocs();
@@ -95,6 +105,23 @@ public class VectorStoreService {
     public boolean isReady() { return ready; }
     public int getTableCount() { return tableCount; }
     public List<TableSummary> getTableSummaries() { return List.copyOf(tableSummaries); }
+    public EmbeddingModel getEmbeddingModel() { return embeddingModel; }
+
+    private EmbeddingStore<TextSegment> createEmbeddingStore() {
+        String backend = env.getProperty("ai.vector-store.backend", "inmemory");
+        if ("chroma".equalsIgnoreCase(backend)) {
+            String prefix = "ai.vector-store.backends.chroma";
+            String host = env.getProperty(prefix + ".host", "http://localhost:8000");
+            String collection = env.getProperty(prefix + ".table-collection", "sql_gen_tables");
+            logger.info("Using ChromaDB for table embeddings: {} / collection={}", host, collection);
+            return dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore.builder()
+                .baseUrl(host)
+                .collectionName(collection)
+                .build();
+        }
+        logger.info("Using InMemoryEmbeddingStore for table embeddings");
+        return new InMemoryEmbeddingStore<>();
+    }
 
     private EmbeddingModel createEmbeddingModel(String provider) {
         String prefix = "ai.vector-store.providers." + provider;

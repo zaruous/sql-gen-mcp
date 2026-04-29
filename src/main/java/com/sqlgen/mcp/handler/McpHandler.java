@@ -18,10 +18,13 @@ public class McpHandler {
     private static final Logger logger = LoggerFactory.getLogger(McpHandler.class);
     private final McpService mcpService;
     private final com.sqlgen.mcp.service.VectorStoreService vectorStoreService;
+    private final com.sqlgen.mcp.service.SqlExampleService sqlExampleService;
 
-    public McpHandler(McpService mcpService, com.sqlgen.mcp.service.VectorStoreService vectorStoreService) {
+    public McpHandler(McpService mcpService, com.sqlgen.mcp.service.VectorStoreService vectorStoreService,
+                      com.sqlgen.mcp.service.SqlExampleService sqlExampleService) {
         this.mcpService = mcpService;
         this.vectorStoreService = vectorStoreService;
+        this.sqlExampleService = sqlExampleService;
     }
 
     public McpSyncServer createServer(McpServerTransportProvider transportProvider) {
@@ -178,7 +181,40 @@ public class McpHandler {
             })
             .build());
 
-        // 7. Search Knowledge Base (RAG)
+        // 7. Search SQL Examples
+        server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+            .tool(McpSchema.Tool.builder()
+                .name("search_sql_examples")
+                .description("등록된 SQL 예시를 자연어로 검색합니다. 유사한 쿼리 패턴과 SQL 예제를 반환하여 쿼리 작성에 활용할 수 있습니다.")
+                .inputSchema(new McpSchema.JsonSchema("object",
+                    Map.of(
+                        "query", Map.of("type", "string", "description", "검색할 자연어 질문 또는 키워드"),
+                        "topK",  Map.of("type", "integer", "description", "반환할 최대 결과 수 (기본값: 5, 최대: 20)")
+                    ),
+                    List.of("query"), false, null, null))
+                .build())
+            .callHandler((exchange, request) -> {
+                String query = (String) request.arguments().get("query");
+                Object topKObj = request.arguments().get("topK");
+                int maxResults = (topKObj instanceof Number)
+                    ? Math.min(((Number) topKObj).intValue(), 20)
+                    : 5;
+                try {
+                    String result = sqlExampleService.searchAsText(query, maxResults);
+                    return McpSchema.CallToolResult.builder()
+                        .content(List.of(new McpSchema.TextContent(result)))
+                        .isError(false)
+                        .build();
+                } catch (Exception e) {
+                    return McpSchema.CallToolResult.builder()
+                        .content(List.of(new McpSchema.TextContent("SQL example search error: " + e.getMessage())))
+                        .isError(true)
+                        .build();
+                }
+            })
+            .build());
+
+        // 8. Search Knowledge Base (RAG)
         server.addTool(McpServerFeatures.SyncToolSpecification.builder()
             .tool(McpSchema.Tool.builder()
                 .name("search_knowledge_base")

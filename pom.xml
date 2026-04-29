@@ -122,28 +122,34 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j</artifactId>
-            <version>1.10.0</version>
+            <version>1.11.6</version>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-google-ai-gemini</artifactId>
-            <version>1.10.0</version>
+            <version>1.11.6</version>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-ollama</artifactId>
-            <version>1.10.0</version>
+            <version>1.11.6</version>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai</artifactId>
-            <version>1.10.0</version>
+            <version>1.11.6</version>
         </dependency>
         <!-- In-Process Embedding (내장형 모델) -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId>
-            <version>1.10.0-beta18</version>
+            <version>1.11.6-beta19</version>
+        </dependency>
+        <!-- ChromaDB Vector Store -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-chroma</artifactId>
+            <version>1.11.6-beta19</version>
         </dependency>
 
         <!-- Annotation Processing for OpenAPI -->
