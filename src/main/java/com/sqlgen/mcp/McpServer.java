@@ -154,6 +154,7 @@ public class McpServer {
 
         final int finalPort = port;
         ToolAdminController toolAdminController = context.getBean(ToolAdminController.class);
+        com.sqlgen.mcp.controller.SqlExampleController sqlExampleController = context.getBean(com.sqlgen.mcp.controller.SqlExampleController.class);
 
         Javalin app = Javalin.create(config -> {
             config.jsonMapper(new io.javalin.json.JavalinJackson(sharedObjectMapper, false));
@@ -188,6 +189,15 @@ public class McpServer {
         app.delete("/api/tools/{name}/boost",  toolAdminController::removeBoost);
         app.get("/api/tools/metadata/export",  toolAdminController::exportMetadata);
         app.post("/api/tools/metadata/import", toolAdminController::importMetadata);
+
+        // SQL Examples API
+        app.get("/api/examples",                sqlExampleController::list);
+        app.post("/api/examples",               sqlExampleController::create);
+        app.put("/api/examples/{id}",           sqlExampleController::update);
+        app.delete("/api/examples/{id}",        sqlExampleController::delete);
+        app.get("/api/examples/search",         sqlExampleController::search);
+        app.get("/api/examples/export",         sqlExampleController::export);
+        app.post("/api/examples/import",        sqlExampleController::importExamples);
 
         app.get("/", mcpController::getIndex);
         app.sse("/sse", mcpController::connectSse);

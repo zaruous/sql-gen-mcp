@@ -1,0 +1,75 @@
+name: Docker Build & Push to Docker Hub
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+      - master
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/sql-gen-mcp
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # 1. 소스 체크아웃
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Docker Buildx 설정 (멀티 플랫폼 빌드 지원)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. Docker Hub 로그인 (PR 빌드는 로그인/푸시 건너뜀)
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 4. 이미지 태그 자동 생성
+      #    - main/master 브랜치 push → :latest
+      #    - v1.2.3 태그 push        → :1.2.3, :1.2, :1, :latest
+      #    - PR                      → :pr-<번호> (빌드만, 푸시 없음)
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+            type=sha,prefix=sha-,format=short
+
+      # 5. 빌드 & 푸시
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GitHub Actions 캐시로 빌드 속도 향상
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 6. 푸시 결과 출력
+      - name: Image digest
+        if: github.event_name != 'pull_request'
+        run: echo "Pushed image digest → ${{ steps.build-and-push.outputs.digest }}"
