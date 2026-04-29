@@ -1,0 +1,1 @@
+set ALLOWED_ORIGINS=http://localhost:6274,http://localhost,http://localhost:7070 && set DANGEROUSLY_OMIT_AUTH=true && npx @modelcontextprotocol/inspector

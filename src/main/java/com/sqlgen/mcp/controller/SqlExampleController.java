@@ -4,6 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sqlgen.mcp.model.SqlExample;
 import com.sqlgen.mcp.service.SqlExampleService;
 import io.javalin.http.Context;
+import io.javalin.openapi.HttpMethod;
+import io.javalin.openapi.OpenApi;
+import io.javalin.openapi.OpenApiContent;
+import io.javalin.openapi.OpenApiParam;
+import io.javalin.openapi.OpenApiRequestBody;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -20,12 +25,21 @@ public class SqlExampleController {
         this.objectMapper = objectMapper;
     }
 
-    // GET /api/examples
+    @OpenApi(path = "/api/examples", methods = HttpMethod.GET, summary = "List SQL examples")
     public void list(Context ctx) {
         ctx.json(exampleService.list());
     }
 
-    // POST /api/examples
+    @OpenApi(
+        path = "/api/examples",
+        methods = HttpMethod.POST,
+        summary = "Create SQL example",
+        requestBody = @OpenApiRequestBody(
+            content = @OpenApiContent(from = SqlExample.class),
+            description = "SQL example payload",
+            required = true
+        )
+    )
     public void create(Context ctx) throws Exception {
         Map<?, ?> body = objectMapper.readValue(ctx.body(), Map.class);
         String title       = str(body, "title");
@@ -46,7 +60,19 @@ public class SqlExampleController {
         ctx.status(201).json(created);
     }
 
-    // PUT /api/examples/{id}
+    @OpenApi(
+        path = "/api/examples/{id}",
+        methods = HttpMethod.PUT,
+        summary = "Update SQL example",
+        pathParams = {
+            @OpenApiParam(name = "id", description = "Example ID", required = true)
+        },
+        requestBody = @OpenApiRequestBody(
+            content = @OpenApiContent(from = SqlExample.class),
+            description = "SQL example payload",
+            required = true
+        )
+    )
     public void update(Context ctx) throws Exception {
         String id = ctx.pathParam("id");
         Map<?, ?> body = objectMapper.readValue(ctx.body(), Map.class);
@@ -65,7 +91,14 @@ public class SqlExampleController {
         ctx.json(updated);
     }
 
-    // DELETE /api/examples/{id}
+    @OpenApi(
+        path = "/api/examples/{id}",
+        methods = HttpMethod.DELETE,
+        summary = "Delete SQL example",
+        pathParams = {
+            @OpenApiParam(name = "id", description = "Example ID", required = true)
+        }
+    )
     public void delete(Context ctx) {
         String id = ctx.pathParam("id");
         boolean deleted = exampleService.delete(id);
@@ -76,7 +109,15 @@ public class SqlExampleController {
         ctx.json(Map.of("success", true, "id", id));
     }
 
-    // GET /api/examples/search?q=...&topK=5
+    @OpenApi(
+        path = "/api/examples/search",
+        methods = HttpMethod.GET,
+        summary = "Search SQL examples",
+        queryParams = {
+            @OpenApiParam(name = "q", description = "Natural language query. Comma-separated multi-search is supported (e.g. 주문,고객)", required = true),
+            @OpenApiParam(name = "topK", description = "Max results to return", required = false, type = Integer.class)
+        }
+    )
     public void search(Context ctx) {
         String q = ctx.queryParamAsClass("q", String.class).getOrDefault("");
         int topK = ctx.queryParamAsClass("topK", Integer.class).getOrDefault(10);
@@ -88,7 +129,7 @@ public class SqlExampleController {
         ctx.json(Map.of("query", q, "results", results));
     }
 
-    // GET /api/examples/export
+    @OpenApi(path = "/api/examples/export", methods = HttpMethod.GET, summary = "Export SQL examples")
     public void export(Context ctx) {
         List<SqlExample> all = exampleService.exportExamples();
         ctx.header("Content-Disposition", "attachment; filename=\"sql-examples.json\"");
@@ -96,7 +137,15 @@ public class SqlExampleController {
         ctx.json(all);
     }
 
-    // POST /api/examples/import
+    @OpenApi(
+        path = "/api/examples/import",
+        methods = HttpMethod.POST,
+        summary = "Import SQL examples",
+        requestBody = @OpenApiRequestBody(
+            description = "Multipart form-data with file field",
+            required = true
+        )
+    )
     public void importExamples(Context ctx) throws Exception {
         var file = ctx.uploadedFile("file");
         if (file == null) {

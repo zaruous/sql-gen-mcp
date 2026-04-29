@@ -296,7 +296,15 @@ java -jar target/sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio
 ```bash
 java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio \
   --db.driver=org.postgresql.Driver \
-  --db.url=jdbc:postgresql://localhost:5433/mesdb \
+  --db.url=jdbc:postgresql://localhost:5433/mydb \
+  --db.user=tester1 \
+  --db.pw=tester1
+```
+
+```powershell
+java -jar sql-gen-mcp-1.0.0-SNAPSHOT.jar --stdio \
+  --db.driver=org.postgresql.Driver \
+  --db.url=jdbc:postgresql://localhost:5433/mydb \
   --db.user=tester1 \
   --db.pw=tester1
 ```
@@ -319,10 +327,11 @@ docker-compose up -d
 # 빌드
 docker build -t sql-gen-mcp .
 
-# 실행 (환경변수로 DB 지정)
+# 실행 예시 1: local provider (기본값, 인메모리)
 docker run -d \
   -p 7070:7070 \
   -p 8081:8081 \
+  -e AI_VECTOR_STORE_PROVIDER=local \
   -e DB_DRIVER=org.postgresql.Driver \
   -e DB_URL=jdbc:postgresql://host.docker.internal:5432/mydb \
   -e DB_USER=myuser \
@@ -331,10 +340,47 @@ docker run -d \
   sql-gen-mcp
 ```
 
+```bash
+# 실행 예시 2: chroma provider
+# 사전 준비: docker run -d --name chroma-db -p 18000:8000 chromadb/chroma
+docker run -d \
+  -p 7070:7070 \
+  -p 8081:8081 \
+  -e AI_VECTOR_STORE_PROVIDER=chroma \
+  -e AI_VECTOR_STORE_CHROMA_URL=http://host.docker.internal:18000 \
+  -e AI_VECTOR_STORE_CHROMA_COLLECTION_NAME=sql-mcp-tools \
+  -e AI_VECTOR_STORE_CHROMA_TABLE_COLLECTION_NAME=sql-mcp-tools \
+  -e AI_VECTOR_STORE_CHROMA_EXAMPLE_COLLECTION_NAME=sql-mcp-examples \
+  -e AI_VECTOR_STORE_CHROMA_TENANT=sql_mcp_server \
+  -e AI_VECTOR_STORE_CHROMA_DATABASE=sql_mcp_server \
+  -e DB_DRIVER=org.postgresql.Driver \
+  -e DB_URL=jdbc:postgresql://host.docker.internal:5432/mydb \
+  -e DB_USER=myuser \
+  -e DB_PW=mypassword \
+  -v $(pwd)/docs/schema:/app/docs/schema \
+  sql-gen-mcp
+```
+
+### Docker에서 provider 변경 시 추가 옵션
+
+- `local` 사용 시: `-e AI_VECTOR_STORE_PROVIDER=local`
+- `chroma` 사용 시:
+  - `-e AI_VECTOR_STORE_PROVIDER=chroma`
+  - `-e AI_VECTOR_STORE_CHROMA_URL=http://host.docker.internal:18000`
+  - 필요 시 `COLLECTION_NAME`, `TABLE_COLLECTION_NAME`, `EXAMPLE_COLLECTION_NAME`, `TENANT`, `DATABASE`도 함께 지정
+- 환경변수 이름은 YAML 키를 대문자 + `_` 형식으로 바꾼 형태입니다.
+
 ### Docker 환경변수
 
 | 환경변수 | 설명 | 기본값 |
 |---|---|---|
+| `AI_VECTOR_STORE_PROVIDER` | 벡터 저장 provider (`local` 또는 `chroma`) | `local` |
+| `AI_VECTOR_STORE_CHROMA_URL` | ChromaDB 서버 URL | `http://localhost:18000` |
+| `AI_VECTOR_STORE_CHROMA_COLLECTION_NAME` | 기본 Chroma 컬렉션명 | `sql-mcp-tools` |
+| `AI_VECTOR_STORE_CHROMA_TABLE_COLLECTION_NAME` | 테이블 스키마용 Chroma 컬렉션명 | `sql-mcp-tools` |
+| `AI_VECTOR_STORE_CHROMA_EXAMPLE_COLLECTION_NAME` | SQL 예시용 Chroma 컬렉션명 | `sql-mcp-examples` |
+| `AI_VECTOR_STORE_CHROMA_TENANT` | Chroma tenant | `sql_mcp_server` |
+| `AI_VECTOR_STORE_CHROMA_DATABASE` | Chroma database | `sql_mcp_server` |
 | `DB_DRIVER` | JDBC 드라이버 클래스명 | `org.postgresql.Driver` |
 | `DB_URL` | JDBC 연결 URL | - |
 | `DB_USER` | DB 사용자명 | - |
@@ -358,8 +404,28 @@ docker run -d \
 ```bash
 docker pull callakrsos/sql-gen-mcp:latest
 
+# local provider
 docker run -d \
   -p 7070:7070 \
+  -e AI_VECTOR_STORE_PROVIDER=local \
+  -e DB_DRIVER=org.postgresql.Driver \
+  -e DB_URL=jdbc:postgresql://host.docker.internal:5432/mydb \
+  -e DB_USER=myuser \
+  -e DB_PW=mypassword \
+  callakrsos/sql-gen-mcp:latest
+```
+
+```bash
+# chroma provider
+docker run -d \
+  -p 7070:7070 \
+  -e AI_VECTOR_STORE_PROVIDER=chroma \
+  -e AI_VECTOR_STORE_CHROMA_URL=http://host.docker.internal:18000 \
+  -e AI_VECTOR_STORE_CHROMA_COLLECTION_NAME=sql-mcp-tools \
+  -e AI_VECTOR_STORE_CHROMA_TABLE_COLLECTION_NAME=sql-mcp-tools \
+  -e AI_VECTOR_STORE_CHROMA_EXAMPLE_COLLECTION_NAME=sql-mcp-examples \
+  -e AI_VECTOR_STORE_CHROMA_TENANT=sql_mcp_server \
+  -e AI_VECTOR_STORE_CHROMA_DATABASE=sql_mcp_server \
   -e DB_DRIVER=org.postgresql.Driver \
   -e DB_URL=jdbc:postgresql://host.docker.internal:5432/mydb \
   -e DB_USER=myuser \

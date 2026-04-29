@@ -548,7 +548,7 @@ public class McpController {
 
     @OpenApi(path = "/knowledge/search", methods = HttpMethod.GET, summary = "Search knowledge base (RAG)",
         queryParams = {
-            @OpenApiParam(name = "q", description = "Natural language query", required = true),
+            @OpenApiParam(name = "q", description = "Natural language query. Comma-separated multi-search is supported (e.g. 주문,고객)", required = true),
             @OpenApiParam(name = "topK", description = "Max results to return (default: 15, max: 30)", required = false, type = Integer.class)
         })
     public void searchKnowledge(Context ctx) throws Exception {
