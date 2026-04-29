@@ -143,7 +143,8 @@ public class SqlExampleController {
         summary = "Import SQL examples",
         requestBody = @OpenApiRequestBody(
             description = "Multipart form-data with file field",
-            required = true
+            required = true,
+            content = @OpenApiContent(type = "multipart/form-data")
         )
     )
     public void importExamples(Context ctx) throws Exception {
